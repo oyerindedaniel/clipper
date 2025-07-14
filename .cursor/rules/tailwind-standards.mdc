@@ -1,0 +1,341 @@
+---
+description:
+globs:
+alwaysApply: true
+---
+
+# Tailwind CSS Standards
+
+## Core Principles
+
+- Use Tailwind CSS v4.1+ for all styling needs
+- Avoid custom CSS except for complex animations or dynamic styles that can't be handled by Tailwind
+- Follow a mobile-first responsive approach
+- Extract repeated patterns into reusable components
+
+## Class Organization
+
+- Group related utility classes together in a logical sequence:
+
+  ```tsx
+  <div className="
+    /* Layout */
+    flex flex-col gap-4
+    /* Sizing */
+    w-full max-w-md
+    /* Spacing */
+    p-6 my-4
+    /* Appearance */
+    bg-white rounded-lg shadow-md
+    /* Typography */
+    text-lg font-medium text-slate-800
+    /* State & Interactivity */
+    hover:bg-slate-50 focus:ring-2
+  ">
+  ```
+
+- Maintain consistency in the order of utility classes across components
+
+## Responsive Design
+
+- Use the mobile-first approach with breakpoint modifiers
+
+  ```tsx
+  <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3">
+    {/* Content */}
+  </div>
+  ```
+
+- Leverage container queries for component-based responsive design
+
+  ```tsx
+  <div className="@container">
+    <div className="grid grid-cols-1 @sm:grid-cols-2 @xl:grid-cols-4">
+      {/* Content */}
+    </div>
+  </div>
+  ```
+
+- Use range constraints when needed
+  ```tsx
+  <div className="hidden @min-md:@max-xl:block">
+    Only visible between md and xl container sizes
+  </div>
+  ```
+
+## Dark Mode
+
+- Implement dark mode support for all components using the `dark:` variant
+
+  ```tsx
+  <div className="bg-white text-slate-900 dark:bg-slate-800 dark:text-white">
+    {/* Content */}
+  </div>
+  ```
+
+- Test all components in both light and dark modes
+
+## Using Tailwind v4.1+ Features
+
+### Theme Variables
+
+- Understand that theme variables are CSS variables that also define utility classes
+
+  ```css
+  /* In a CSS file */
+  @import "tailwindcss";
+  @theme {
+    --color-brand: oklch(0.72 0.11 178);
+    --font-display: "Satoshi", sans-serif;
+    --ease-snappy: cubic-bezier(0.2, 0, 0, 1);
+  }
+  ```
+
+- Reference theme variables directly in components
+
+  ```tsx
+  <div
+    style={{
+      backgroundColor: "var(--color-brand)",
+      fontFamily: "var(--font-display)",
+      transitionTimingFunction: "var(--ease-snappy)",
+    }}
+  >
+    Using theme variables
+  </div>
+  ```
+
+- Override or extend theme variables in your main CSS file
+
+  ```css
+  /* Extend with new values */
+  @theme {
+    --color-primary: oklch(0.72 0.18 200);
+    --font-display: "Satoshi", sans-serif;
+  }
+
+  /* Override all colors */
+  @theme {
+    --color-*: initial;
+    --color-white: #fff;
+    --color-brand-50: oklch(0.98 0.02 178);
+    --color-brand-500: oklch(0.72 0.11 178);
+    --color-brand-900: oklch(0.4 0.08 178);
+  }
+  ```
+
+- Be aware that namespaces govern which utility classes are generated
+  ```
+  Namespace          Utility classes
+  --color-*          bg-red-500, text-brand-300, etc.
+  --font-*           font-sans, font-display, etc.
+  --text-*           text-lg, text-2xl, etc.
+  --spacing-*        m-4, p-6, gap-2, etc.
+  --breakpoint-*     sm:flex, lg:hidden, etc.
+  --ease-*           ease-linear, ease-snappy, etc.
+  ```
+
+### Color Handling
+
+- Use dynamic opacity with the slash syntax
+
+  ```tsx
+  <div className="bg-blue-500/50">Semi-transparent background</div>
+  ```
+
+- Leverage the new color-mix capabilities for overlays and blending
+  ```tsx
+  <div className="bg-color-mix-overlay-blue-500/40">Overlay with blue</div>
+  ```
+
+### Spacing and Sizing
+
+- Use dynamic values for grid columns and other dimensions
+
+  ```tsx
+  <div className="grid grid-cols-12 gap-4">
+    <div className="col-span-5">5 columns</div>
+  </div>
+  ```
+
+- Leverage the spacing scale for consistent dimensions
+  ```tsx
+  <div className="mt-6 p-8 gap-4">Uses spacing scale consistently</div>
+  ```
+
+### 3D Transforms
+
+- Use 3D transform utilities for enhanced visuals
+  ```tsx
+  <div className="perspective-distant">
+    <div className="rotate-x-15 rotate-y-5 transform-3d hover:rotate-y-15">
+      3D card effect
+    </div>
+  </div>
+  ```
+
+### Gradients
+
+- Use expanded gradient options
+
+  ```tsx
+  <div className="bg-linear-45 from-indigo-500 via-purple-500 to-pink-500">
+    Linear gradient at 45 degrees
+  </div>
+
+  <div className="bg-radial-[at_25%_25%] from-blue-500 to-purple-600">
+    Radial gradient from top-left
+  </div>
+
+  <div className="bg-conic from-red-500 to-blue-500">
+    Conic gradient
+  </div>
+  ```
+
+- Control color interpolation for more vivid gradients
+  ```tsx
+  <div className="bg-linear-to-r/oklch from-blue-400 to-emerald-400">
+    Gradient interpolated in OKLCH color space
+  </div>
+  ```
+
+### Transitions and Animations
+
+- Use `@starting-style` for entrance animations
+
+  ```tsx
+  <div
+    className="
+    transition-all duration-300 ease-out 
+    starting:opacity-0 starting:translate-y-4
+  "
+  >
+    Animates in from below
+  </div>
+  ```
+
+- Use `transition-discrete` for optimized animations
+  ```tsx
+  <div className="transition-discrete hover:scale-105">
+    Smooth scaling on hover
+  </div>
+  ```
+
+## Component Patterns
+
+### Extract Complex Patterns
+
+- Create reusable components for repeated UI patterns
+  ```tsx
+  // Instead of repeating complex class combinations
+  const Card = ({ children, className = "" }) => (
+    <div
+      className={
+        (cn(`
+      bg-white rounded-lg shadow-md p-6 
+      dark:bg-slate-800 dark:text-white
+    `),
+        className)
+      }
+    >
+      {children}
+    </div>
+  );
+  ```
+
+### Using Theme Variables
+
+- Access theme variables for dynamic styling in JavaScript
+
+  ```tsx
+  <div
+    style={{
+      // Access theme variables directly
+      backgroundColor: "var(--color-blue-500)",
+      transitionTimingFunction: "var(--ease-snappy)",
+    }}
+  >
+    Dynamically styled content
+  </div>
+  ```
+
+- Use inline option for theme variables that reference other variables
+  ```css
+  @theme inline {
+    --font-sans: var(--font-inter);
+  }
+  ```
+
+## CSS Import and Theme Configuration
+
+- Use the simplified CSS import for Tailwind v4
+
+  ```css
+  /* app.css */
+  @import "tailwindcss";
+  ```
+
+- Define theme variables immediately after the import
+
+  ```css
+  @import "tailwindcss";
+  @theme {
+    --breakpoint-3xl: 1920px;
+    --color-brand-500: oklch(0.72 0.11 178);
+  }
+  ```
+
+- Share theme variables across projects by creating a separate theme file
+
+  ```css
+  /* packages/brand/theme.css */
+  @theme {
+    --*: initial;
+    --spacing: 4px;
+    --font-body: Inter, sans-serif;
+    --color-primary: oklch(0.72 0.11 178);
+  }
+
+  /* Import in your project */
+  @import "tailwindcss";
+  @import "../brand/theme.css";
+  ```
+
+## Utility-First Approach
+
+- Start with utility classes, extract components when patterns repeat
+- Use the `className` prop for flexible styling of reusable components
+
+  ```tsx
+  <Button variant="primary" className="mt-4 w-full md:w-auto">
+    Submit
+  </Button>
+  ```
+
+- Avoid mixing different styling approaches (Tailwind + CSS-in-JS)
+
+## Advanced Selectors
+
+- Use the `not-` variant for exception handling
+
+  ```tsx
+  <div className="not-hover:opacity-75">Slightly transparent until hovered</div>
+  ```
+
+- Use data attribute selectors for component states
+
+  ```tsx
+  <div data-active={isActive} className="opacity-50 data-active:opacity-100">
+    Content that changes opacity based on state
+  </div>
+  ```
+
+- Use the `group` and `peer` system for related elements
+  ```tsx
+  <div className="group hover:bg-slate-100">
+    <h3>Title</h3>
+    <p className="group-hover:text-blue-600">
+      Text that changes color when parent is hovered
+    </p>
+  </div>
+  ```
