@@ -110,35 +110,47 @@ Array of `{ timestampStart, timestampEnd }` relative to stream
   - `markedAt` (timestamp when the hotkey was pressed)
 - **Visual Feedback**: Provide subtle visual feedback (e.g., a small toast notification or a change in a UI element) when a hotkey is pressed and a clip is marked.
 
-### ✂️ Editor Module (Lightweight)
+### ✂️ Editor Module (Comprehensive)
 
 **Purpose:**
-View all marked clips, trim start/end, and export them.
+A robust editor to view, refine, and export marked clips.
+
+**Key Features & Interface:**
+
+- **Editor Interface**: A dedicated, intuitive UI for clip manipulation.
+- **Video Preview**: Integrate a video player to preview the selected clip.
+- **Timeline of Clip**: A visual timeline representing the selected clip's duration.
+- **Timeline Scrubber**: Allow users to scrub through the clip on the timeline for precise navigation.
+- **Start/End Trim**: Enable users to define the exact start and end points of their clip using draggable handles on the timeline or numerical inputs.
+- **Text Overlays**:
+  - **Captions**: Add customizable text captions at specific timestamps.
+  - **Meme Text**: Support adding meme-style text overlays with various fonts and styles.
+- **Background Audio Track**: Provide functionality to add a separate background audio track (e.g., music) to the clip, with volume control.
+- **Configurable Clip Duration**: Instead of fixed 10 seconds before/after a marker, allow users to:
+  - **Configure Default Duration**: Set a preferred default duration for clips created via hotkeys.
+  - **Manual Adjustment**: Precisely adjust the start and end points in the editor, overriding default hotkey-marked durations.
+- **Preview + Export**:
+  - **Real-time Preview**: Offer a live preview of the trimmed clip, including any text overlays and background audio.
+  - **Export Options**: Export the final clip in a user-selected format (e.g., MP4) with options for quality and resolution.
 
 **Approach:**
 
-- Video preview (via `<video>` tag)
-- Timeline scrubber
-- Start/End trimmer
-- Caption input
-- Export button
+- Utilize `React` (or chosen UI framework) for building the interactive editor UI.
+- Video preview via `<video>` tag or a more advanced library like `react-player`.
+- Custom timeline component with draggable markers and scrubber. Consider libraries for waveform visualization for audio.
+- Overlay text rendering directly onto the video frames during export (handled by FFmpeg).
+- FFmpeg (spawned via `child_process`) for all heavy-lifting:
+  - Merging video, original audio, text overlays, and new background audio.
+  - Trimming the video based on user-defined start/end points.
+  - Converting to target format (e.g., MP4).
 
-**Export uses FFmpeg (spawned via `child_process`):**
+**FFmpeg Integration Considerations:**
 
-- Merge selected clip (WebM) + captions + optional music
-- Convert to MP4
-
-**Improvements/Considerations:**
-
-- **UI Framework**: Choose a suitable UI framework (e.g., React, Vue, Svelte) to build a responsive and user-friendly editor interface.
-- **Video Preview**: While `<video>` tag is good, consider libraries like `react-player` for more advanced control over video playback and seeking.
-- **Timeline Implementation**: A custom timeline scrubber can be complex. You might look into existing open-source libraries or components for video timeline UIs. For audio visualization on the timeline, `wavesurfer.js` could be helpful.
-- **FFmpeg Integration**:
-  - **Bundling FFmpeg**: You'll need to bundle the FFmpeg executable with your Electron app (e.g., using `electron-builder`'s extra resources or `electron-ffmpeg`).
-  - **Progress Feedback**: Crucially, provide real-time progress feedback to the user during FFmpeg export, as this can be a long-running process. Parse FFmpeg's console output for progress.
-  - **Error Handling**: Handle cases where FFmpeg encounters errors (e.g., malformed input, failed encoding).
-  - **Asynchronous Execution**: Spawn FFmpeg as a child process (`child_process.spawn`) and handle its output and errors asynchronously to avoid blocking the Electron main process.
-  - **Optimization**: Explore FFmpeg flags for faster encoding or smaller file sizes, potentially offering user options for quality/size.
+- **Bundling FFmpeg**: Bundle the FFmpeg executable with the Electron app.
+- **Progress Feedback**: Provide real-time progress feedback during export by parsing FFmpeg's console output.
+- **Error Handling**: Implement robust error handling for FFmpeg operations.
+- **Asynchronous Execution**: Ensure FFmpeg processes run asynchronously to avoid UI freezes.
+- **Optimization**: Explore FFmpeg flags for faster encoding, smaller file sizes, and hardware acceleration options.
 
 ### 💾 Local Clip Storage
 

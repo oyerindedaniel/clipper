@@ -1,6 +1,7 @@
 import { useState, useMemo } from "react";
 import { Play, Edit, Trash2, RefreshCw, Clock, Calendar } from "lucide-react";
 import { ClipMarker } from "@/types/app";
+import { toast } from "sonner";
 
 interface ClipListProps {
   clips: ClipMarker[];
@@ -8,12 +9,14 @@ interface ClipListProps {
   onRefresh: () => Promise<void>;
 }
 
+type SortMode = "newest" | "oldest" | "duration";
+
 export default function ClipList({
   clips,
   onEditClip,
   onRefresh,
 }: ClipListProps) {
-  const [sortBy, setSortBy] = useState<string>("newest");
+  const [sortBy, setSortBy] = useState<SortMode>("newest");
   const [filterText, setFilterText] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
 
@@ -101,7 +104,7 @@ export default function ClipList({
             </label>
             <select
               value={sortBy}
-              onChange={(e) => setSortBy(e.target.value)}
+              onChange={(e) => setSortBy(e.target.value as SortMode)}
               className="px-4 py-2.5 bg-gray-700 border border-gray-600 rounded-lg text-white appearance-none focus:outline-none focus:ring-3 focus:ring-purple-500 focus:border-purple-500 transition-all duration-200"
             >
               <option value="newest">Newest First</option>
@@ -160,6 +163,11 @@ export default function ClipList({
                       onClick={() => {
                         // TODO: Implement delete functionality
                         console.log("Delete clip:", clip.id);
+                        toast.info(
+                          `Delete functionality for clip ${
+                            clip.id.split("_")[1]
+                          } is not yet implemented.`
+                        );
                       }}
                       className="p-2 bg-red-600 text-white rounded-full hover:bg-red-700 transition-colors duration-200 shadow-md flex items-center justify-center transform hover:scale-105"
                       title="Delete Clip"

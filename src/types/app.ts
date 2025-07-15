@@ -7,6 +7,45 @@ export interface ClipMarker {
   endTime: number;
   markedAt: number;
   streamStart: number;
+  bufferFile: string;
+}
+
+export interface TextOverlay {
+  id: string;
+  text: string;
+  startTime: number;
+  endTime: number;
+  x: number;
+  y: number;
+  fontSize: number;
+  fontFamily: string;
+  letterSpacing: string;
+  color: string;
+  backgroundColor: string;
+  opacity: number;
+  bold: boolean;
+  italic: boolean;
+  underline: boolean;
+  alignment: "left" | "center" | "right";
+  visible: boolean;
+}
+
+export interface AudioTrack {
+  id: string;
+  name: string;
+  file: File | null;
+  volume: number;
+  startTime: number;
+  endTime: number;
+  visible: boolean;
+}
+
+export interface ExportSettings {
+  format: "mp4" | "webm" | "mov";
+  quality: "low" | "medium" | "high" | "ultra";
+  resolution: "720p" | "1080p" | "1440p" | "4k";
+  fps: 30 | 60;
+  bitrate: number;
 }
 
 /**

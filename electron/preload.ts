@@ -14,7 +14,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
   openTwitchStream: (channelName: string): Promise<{ success: boolean }> =>
     ipcRenderer.invoke("open-twitch-stream", channelName),
 
-  startRecording: (): Promise<{ success: boolean }> =>
+  startRecording: (sourceId?: string): Promise<{ success: boolean }> =>
     ipcRenderer.invoke("start-recording"),
   stopRecording: (): Promise<{ success: boolean }> =>
     ipcRenderer.invoke("stop-recording"),

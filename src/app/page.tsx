@@ -1,15 +1,19 @@
 "use client";
 
-import { useState, useEffect } from "react";
+import { useState, useEffect, startTransition, useCallback } from "react";
 import StreamViewer from "@/components/stream-viewer";
 import RecordingControls from "@/components/recording-controls";
 import ClipEditor from "@/components/clip-editor";
 import ClipList from "../components/clip-list";
 import { ClipMarker, RecordingStartedInfo } from "@/types/app";
 import { IpcRendererEvent } from "electron";
+import { normalizeError } from "@/utils/error-utils";
+import { toast } from "sonner";
+
+type TabKey = "stream" | "clips" | "editor";
 
 export default function Home() {
-  const [activeTab, setActiveTab] = useState<string>("stream");
+  const [activeTab, setActiveTab] = useState<TabKey>("stream");
   const [isRecording, setIsRecording] = useState<boolean>(false);
   const [clipMarkers, setClipMarkers] = useState<ClipMarker[]>([]);
   const [selectedClip, setSelectedClip] = useState<ClipMarker | null>(null);
@@ -65,35 +69,50 @@ export default function Home() {
     try {
       const markers = await window.electronAPI.getClipMarkers();
       setClipMarkers(markers);
-    } catch (error: any) {
+    } catch (error) {
       console.error("Failed to load clip markers:", error);
+      const normalizedError = normalizeError(error);
+      toast.error(`${normalizedError.message}`);
     }
   };
 
   const handleStartRecording = async () => {
     try {
       await window.electronAPI.startRecording();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Failed to start recording:", error);
+      const normalizedError = normalizeError(error);
+      toast.error(`${normalizedError.message}`);
     }
   };
 
   const handleStopRecording = async () => {
     try {
       await window.electronAPI.stopRecording();
-    } catch (error: any) {
+    } catch (error) {
       console.error("Failed to stop recording:", error);
+      const normalizedError = normalizeError(error);
+      toast.error(`${normalizedError.message}`);
     }
   };
 
   const handleEditClip = (clip: ClipMarker) => {
     setSelectedClip(clip);
-    setActiveTab("editor");
+    startTransition(() => setActiveTab("editor"));
   };
 
   const handleClipExported = () => {
     loadClipMarkers();
   };
+
+  const handleTabClick = useCallback(
+    (key: TabKey) => {
+      startTransition(() => {
+        setActiveTab(key);
+      });
+    },
+    [setActiveTab]
+  );
 
   return (
     <div className="min-h-screen bg-gray-900 text-white">
@@ -101,7 +120,7 @@ export default function Home() {
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
-              <h1 className="text-xl font-bold font-mono uppercase text-purple-400">
+              <h1 className="text-lg font-bold font-mono text-purple-400">
                 Twitch Clip Recorder
               </h1>
             </div>
@@ -119,10 +138,10 @@ export default function Home() {
 
       <nav className="bg-gray-800 border-b border-gray-700">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-8 font-mono">
+          <div className="flex space-x-8 font-sans">
             <button
-              onClick={() => setActiveTab("stream")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              onClick={() => handleTabClick("stream")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm cursor-pointer ${
                 activeTab === "stream"
                   ? "border-purple-500 text-purple-400"
                   : "border-transparent text-gray-400 hover:text-gray-300"
@@ -131,8 +150,8 @@ export default function Home() {
               Stream Viewer
             </button>
             <button
-              onClick={() => setActiveTab("clips")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              onClick={() => handleTabClick("clips")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm cursor-pointer ${
                 activeTab === "clips"
                   ? "border-purple-500 text-purple-400"
                   : "border-transparent text-gray-400 hover:text-gray-300"
@@ -141,8 +160,8 @@ export default function Home() {
               Clips ({clipMarkers.length})
             </button>
             <button
-              onClick={() => setActiveTab("editor")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm ${
+              onClick={() => handleTabClick("editor")}
+              className={`py-4 px-1 border-b-2 font-medium text-sm cursor-pointer ${
                 activeTab === "editor"
                   ? "border-purple-500 text-purple-400"
                   : "border-transparent text-gray-400 hover:text-gray-300"

@@ -21,6 +21,17 @@ let clipMarkers: ClipMarker[] = [];
 let currentStream: StreamSession | null = null;
 
 const bufferDir = path.join(os.tmpdir(), "twitch-recorder-buffer");
+
+const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
+
+console.log({
+  isDev,
+  nodeEnv: process.env.NODE_ENV,
+  isPackaged: app.isPackaged,
+  __dirname,
+  tempBufferDir: bufferDir,
+});
+
 if (!fs.existsSync(bufferDir)) {
   fs.mkdirSync(bufferDir, { recursive: true });
 }
@@ -40,10 +51,13 @@ function createMainWindow(): void {
     },
   });
 
-  const isDev = process.env.NODE_ENV === "development";
   const url = isDev
     ? "http://localhost:3000"
     : `file://${path.join(__dirname, "../out/index.html")}`;
+
+  if (isDev) {
+    mainWindow.webContents.openDevTools();
+  }
 
   mainWindow.loadURL(url);
   mainWindow.once("ready-to-show", () => mainWindow?.show());
@@ -65,7 +79,7 @@ function createTwitchWindow(channelName: string): void {
   twitchWindow = new BrowserWindow({
     width: 1280,
     height: 720,
-    parent: mainWindow ?? undefined,
+    // parent: mainWindow ?? undefined,
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -88,14 +102,31 @@ function createTwitchWindow(channelName: string): void {
 /**
  * Start capturing desktop/window for recording.
  */
-async function startRecording(): Promise<void> {
+async function startRecording(sourceId?: string): Promise<void> {
   if (isRecording) return;
 
   try {
     const sources = await desktopCapturer.getSources({
       types: ["window", "screen"],
     });
-    const source = sources.find((s) => /twitch|chrome/i.test(s.name));
+
+    let source;
+
+    if (sourceId) {
+      source = sources.find((s) => s.id === sourceId);
+    }
+
+    if (!source && twitchWindow) {
+      const twitchTitle = twitchWindow.getTitle();
+      source = sources.find((s) => s.name === twitchTitle);
+    }
+
+    if (!source) {
+      source = sources.find((s) => /twitch|chrome/i.test(s.name));
+    }
+
+    console.log({ source });
+
     if (!source) throw new Error("No suitable capture source found");
 
     isRecording = true;
@@ -147,6 +178,7 @@ function markClip(): void {
     endTime: relative + 10_000,
     markedAt: now,
     streamStart: currentStream.startTime,
+    bufferFile: currentStream.bufferFile,
   };
   clipMarkers.push(marker);
   mainWindow?.webContents.send("clip-marked", marker);
@@ -229,10 +261,13 @@ function setupIpc(): void {
       return { success: true };
     }
   );
-  ipcMain.handle("start-recording", async () => {
-    await startRecording();
-    return { success: true };
-  });
+  ipcMain.handle(
+    "start-recording",
+    async (_: IpcMainInvokeEvent, sourceId?: string) => {
+      await startRecording(sourceId);
+      return { success: true };
+    }
+  );
   ipcMain.handle("stop-recording", () => {
     stopRecording();
     return { success: true };
