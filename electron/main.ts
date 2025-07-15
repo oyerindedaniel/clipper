@@ -12,6 +12,7 @@ import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
 import { ClipExportData, ClipMarker, StreamSession } from "../src/types/app";
+import recordingService from "@/services/recording-service";
 
 let mainWindow: BrowserWindow | null = null;
 let twitchWindow: BrowserWindow | null = null;
@@ -44,6 +45,8 @@ function createMainWindow(): void {
     width: 1200,
     height: 800,
     show: false,
+    // frame: false,
+    // titleBarStyle: "hidden",
     webPreferences: {
       nodeIntegration: false,
       contextIsolation: true,
@@ -129,19 +132,23 @@ async function startRecording(sourceId?: string): Promise<void> {
 
     if (!source) throw new Error("No suitable capture source found");
 
-    isRecording = true;
-    currentStream = {
-      startTime: Date.now(),
-      sourceId: source.id,
-      bufferFile: path.join(bufferDir, `buffer_${Date.now()}.webm`),
-    };
+    const result = await recordingService.startRecording(source.id);
 
-    mainWindow?.webContents.send("recording-started", {
-      sourceId: source.id,
-      startTime: currentStream.startTime,
-    });
+    if (result.success) {
+      isRecording = true;
+      currentStream = {
+        startTime: Date.now(),
+        sourceId: source.id,
+        bufferFile: path.join(bufferDir, `buffer_${Date.now()}.webm`),
+      };
 
-    cleanOldBuffers();
+      mainWindow?.webContents.send("recording-started", {
+        sourceId: source.id,
+        startTime: currentStream.startTime,
+      });
+
+      cleanOldBuffers();
+    }
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     console.error("Recording failed:", msg);
@@ -154,6 +161,8 @@ async function startRecording(sourceId?: string): Promise<void> {
  */
 function stopRecording(): void {
   if (!isRecording) return;
+
+  recordingService.stopRecording();
 
   isRecording = false;
   currentStream = null;
@@ -207,47 +216,71 @@ function cleanOldBuffers(): void {
 async function exportClip(
   data: ClipExportData
 ): Promise<{ success: boolean; outputPath: string }> {
-  if (!currentStream) throw new Error("No active stream for export");
+  try {
+    const clipBlob = recordingService.getClipBlob(data.startTime, data.endTime);
 
-  const input = currentStream.bufferFile;
-  const output = path.join(data.outputPath, `${data.outputName}.mp4`);
-  const args = [
-    "-i",
-    input,
-    "-ss",
-    (data.startTime / 1000).toFixed(2),
-    "-t",
-    ((data.endTime - data.startTime) / 1000).toFixed(2),
-    "-c:v",
-    "libx264",
-    "-c:a",
-    "aac",
-    "-preset",
-    "fast",
-    "-crf",
-    "23",
-    output,
-  ];
+    if (!clipBlob) {
+      throw new Error("No clip data found for the specified time range");
+    }
 
-  return new Promise((resolve, reject) => {
-    const ff = spawn(path.join(__dirname, "../ffmpeg/ffmpeg"), args);
-    recordingProcess = ff;
-    ff.stderr.on("data", (chunk) => {
-      const m = chunk.toString().match(/time=(\d+:\d+:\d+\.\d+)/);
-      if (m) {
-        mainWindow?.webContents.send("export-progress", {
-          clipId: data.id,
-          progress: m[1],
-        });
-      }
+    const buffer = await clipBlob.arrayBuffer();
+    const tempInput = path.join(bufferDir, `temp_clip_${Date.now()}.webm`);
+    fs.writeFileSync(tempInput, Buffer.from(buffer));
+
+    const output = path.join(data.outputPath, `${data.outputName}.mp4`);
+    const args = [
+      "-i",
+      tempInput,
+      "-c:v",
+      "libx264",
+      "-c:a",
+      "aac",
+      "-preset",
+      "fast",
+      "-crf",
+      "23",
+      "-y",
+      output,
+    ];
+
+    return new Promise((resolve, reject) => {
+      const ff = spawn(path.join(__dirname, "../ffmpeg/ffmpeg"), args);
+      recordingProcess = ff;
+
+      ff.stderr.on("data", (chunk) => {
+        const m = chunk.toString().match(/time=(\d+:\d+:\d+\.\d+)/);
+        if (m) {
+          mainWindow?.webContents.send("export-progress", {
+            clipId: data.id,
+            progress: m[1],
+          });
+        }
+      });
+
+      ff.on("close", (code) => {
+        recordingProcess = null;
+        try {
+          fs.unlinkSync(tempInput);
+        } catch (e) {
+          console.warn("Could not delete temp file:", e);
+        }
+
+        if (code === 0) {
+          resolve({ success: true, outputPath: output });
+        } else {
+          reject(new Error(`FFmpeg exited with code ${code}`));
+        }
+      });
+
+      ff.on("error", (err) => {
+        recordingProcess = null;
+        reject(err);
+      });
     });
-    ff.on("close", (code) =>
-      code === 0
-        ? resolve({ success: true, outputPath: output })
-        : reject(new Error(`FFmpeg exited ${code}`))
-    );
-    ff.on("error", reject);
-  });
+  } catch (error) {
+    console.error("Export failed:", error);
+    throw error;
+  }
 }
 
 /**

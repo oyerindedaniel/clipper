@@ -1,15 +1,11 @@
-/**
- * Represents a single recorded media chunk with a timestamp.
- */
-interface RecordedChunk {
-  data: Blob;
-  timestamp: number;
-}
+import { RecordedChunk } from "@/types/app";
 
 /**
  * Handles screen and audio recording, buffering, and clip extraction.
  */
 class RecordingService {
+  private static instance: RecordingService | null = null;
+
   private mediaRecorder: MediaRecorder | null = null;
   private recordedChunks: RecordedChunk[] = [];
   private isRecording = false;
@@ -94,6 +90,18 @@ class RecordingService {
       console.error("Failed to start recording:", error);
       throw error;
     }
+  }
+
+  /**
+   * Provides access to the singleton instance of the RecordingService.
+   * @returns The RecordingService instance.
+   */
+  public static getInstance(): RecordingService {
+    if (!RecordingService.instance) {
+      RecordingService.instance = new RecordingService();
+    }
+
+    return RecordingService.instance;
   }
 
   /**
@@ -198,15 +206,5 @@ class RecordingService {
   }
 }
 
-const recordingService = new RecordingService();
+const recordingService = RecordingService.getInstance();
 export default recordingService;
-
-declare global {
-  interface Window {
-    recordingService: RecordingService;
-  }
-}
-
-if (typeof window !== "undefined") {
-  window.recordingService = recordingService;
-}

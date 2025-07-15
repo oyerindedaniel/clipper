@@ -194,7 +194,7 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
       y: 50,
       fontSize: 48,
       fontFamily: "Inter",
-      letterSpacing: "-0.3em",
+      letterSpacing: "-0.03em",
       color: "#ffffff",
       backgroundColor: "#000000",
       opacity: 0.8,
@@ -298,7 +298,6 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
     }
   };
 
-  // Listen for export progress
   useEffect(() => {
     const handleExportProgress = (
       _: IpcRendererEvent,
@@ -350,9 +349,7 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
       </div>
 
       <div className="flex flex-1 overflow-hidden">
-        {/* Sidebar */}
         <div className="w-80 bg-gray-800 border-r border-gray-700 flex flex-col">
-          {/* Tab Navigation */}
           <div className="flex border-b border-gray-700">
             {[
               { id: "clips", label: "Clips", icon: Scissors },
