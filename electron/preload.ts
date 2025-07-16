@@ -15,7 +15,7 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("open-twitch-stream", channelName),
 
   startRecording: (sourceId?: string): Promise<{ success: boolean }> =>
-    ipcRenderer.invoke("start-recording"),
+    ipcRenderer.invoke("start-recording", sourceId),
   stopRecording: (): Promise<{ success: boolean }> =>
     ipcRenderer.invoke("stop-recording"),
 
@@ -31,6 +31,74 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getDesktopSources: (): Promise<DesktopSource[]> =>
     ipcRenderer.invoke("get-desktop-sources"),
 
+  // Recording service communication
+  onRequestStartRecording: (
+    callback: (
+      _: IpcRendererEvent,
+      data: { sourceId: string; requestId: string }
+    ) => void
+  ): void => {
+    ipcRenderer.on("request-start-recording", callback);
+  },
+
+  onRequestStopRecording: (
+    callback: (_: IpcRendererEvent, data: { requestId: string }) => void
+  ): void => {
+    ipcRenderer.on("request-stop-recording", callback);
+  },
+
+  onRequestMarkClip: (
+    callback: (
+      _: IpcRendererEvent,
+      data: { requestId: string; streamStartTime: number }
+    ) => void
+  ): void => {
+    ipcRenderer.on("request-mark-clip", callback);
+  },
+
+  onRequestExportClip: (
+    callback: (
+      _: IpcRendererEvent,
+      data: { requestId: string; clipData: ClipExportData }
+    ) => void
+  ): void => {
+    ipcRenderer.on("request-export-clip", callback);
+  },
+
+  // Response senders
+  sendStartRecordingResponse: (response: {
+    requestId: string;
+    success: boolean;
+    error?: string;
+  }): void => {
+    ipcRenderer.send("start-recording-response", response);
+  },
+
+  sendStopRecordingResponse: (response: {
+    requestId: string;
+    success: boolean;
+  }): void => {
+    ipcRenderer.send("stop-recording-response", response);
+  },
+
+  sendMarkClipResponse: (response: {
+    requestId: string;
+    success: boolean;
+    marker?: any;
+  }): void => {
+    ipcRenderer.send("mark-clip-response", response);
+  },
+
+  sendExportClipResponse: (response: {
+    requestId: string;
+    success: boolean;
+    blob?: ArrayBuffer;
+    error?: string;
+  }): void => {
+    ipcRenderer.send("export-clip-response", response);
+  },
+
+  // Existing listeners
   onRecordingStarted: (
     callback: (_: IpcRendererEvent, info: RecordingStartedInfo) => void
   ): void => {

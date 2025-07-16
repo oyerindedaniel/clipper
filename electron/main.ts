@@ -12,7 +12,7 @@ import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
 import { ClipExportData, ClipMarker, StreamSession } from "../src/types/app";
-import recordingService from "@/services/recording-service";
+import logger from "../src/utils/logger";
 
 let mainWindow: BrowserWindow | null = null;
 let twitchWindow: BrowserWindow | null = null;
@@ -25,7 +25,7 @@ const bufferDir = path.join(os.tmpdir(), "twitch-recorder-buffer");
 
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 
-console.log({
+logger.log({
   isDev,
   nodeEnv: process.env.NODE_ENV,
   isPackaged: app.isPackaged,
@@ -34,6 +34,7 @@ console.log({
 });
 
 if (!fs.existsSync(bufferDir)) {
+  logger.log(`Creating buffer directory at: ${bufferDir}`);
   fs.mkdirSync(bufferDir, { recursive: true });
 }
 
@@ -71,7 +72,6 @@ function createMainWindow(): void {
 
 /**
  * Create or focus the Twitch viewer window.
- * @param channelName - Twitch channel to open
  */
 function createTwitchWindow(channelName: string): void {
   if (twitchWindow) {
@@ -103,7 +103,7 @@ function createTwitchWindow(channelName: string): void {
 }
 
 /**
- * Start capturing desktop/window for recording.
+ * Start recording by requesting renderer to handle it.
  */
 async function startRecording(sourceId?: string): Promise<void> {
   if (isRecording) return;
@@ -128,104 +128,166 @@ async function startRecording(sourceId?: string): Promise<void> {
       source = sources.find((s) => /twitch|chrome/i.test(s.name));
     }
 
-    console.log({ source });
-
     if (!source) throw new Error("No suitable capture source found");
 
-    const result = await recordingService.startRecording(source.id);
+    // Request renderer to start recording and wait for response
+    return new Promise((resolve, reject) => {
+      const requestId = Date.now().toString();
 
-    if (result.success) {
-      isRecording = true;
-      currentStream = {
-        startTime: Date.now(),
-        sourceId: source.id,
-        bufferFile: path.join(bufferDir, `buffer_${Date.now()}.webm`),
+      // Set up response listener
+      const responseHandler = (event: any, response: any) => {
+        if (response.requestId === requestId) {
+          ipcMain.removeListener("start-recording-response", responseHandler);
+
+          if (response.success) {
+            isRecording = true;
+            currentStream = {
+              startTime: Date.now(),
+              sourceId: source.id,
+              bufferFile: path.join(bufferDir, `buffer_${Date.now()}.webm`),
+            };
+
+            mainWindow?.webContents.send("recording-started", {
+              sourceId: source.id,
+              startTime: currentStream.startTime,
+            });
+
+            cleanOldBuffers();
+            resolve();
+          } else {
+            reject(new Error(response.error || "Recording failed"));
+          }
+        }
       };
 
-      mainWindow?.webContents.send("recording-started", {
-        sourceId: source.id,
-        startTime: currentStream.startTime,
-      });
+      ipcMain.on("start-recording-response", responseHandler);
 
-      cleanOldBuffers();
-    }
+      // Send request to renderer
+      mainWindow?.webContents.send("request-start-recording", {
+        sourceId: source.id,
+        requestId,
+      });
+    });
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
-    console.error("Recording failed:", msg);
+    logger.error("Recording failed:", msg);
     mainWindow?.webContents.send("recording-error", msg);
+    throw err;
   }
 }
 
 /**
- * Stop the current recording session.
+ * Stop recording by requesting renderer to handle it.
  */
-function stopRecording(): void {
+async function stopRecording(): Promise<void> {
   if (!isRecording) return;
 
-  recordingService.stopRecording();
+  return new Promise<void>((resolve) => {
+    const requestId = Date.now().toString();
 
-  isRecording = false;
-  currentStream = null;
-  if (recordingProcess) {
-    recordingProcess.kill();
-    recordingProcess = null;
-  }
-  mainWindow?.webContents.send("recording-stopped");
+    // Set up response listener
+    const responseHandler = (event: any, response: any) => {
+      if (response.requestId === requestId) {
+        ipcMain.removeListener("stop-recording-response", responseHandler);
+
+        isRecording = false;
+        currentStream = null;
+        if (recordingProcess) {
+          recordingProcess.kill();
+          recordingProcess = null;
+        }
+        mainWindow?.webContents.send("recording-stopped");
+        resolve();
+      }
+    };
+
+    ipcMain.on("stop-recording-response", responseHandler);
+
+    // Send request to renderer
+    mainWindow?.webContents.send("request-stop-recording", { requestId });
+  });
 }
 
 /**
- * Mark a clip segment around current time.
+ * Mark a clip by requesting renderer to handle it.
  */
 function markClip(): void {
   if (!isRecording || !currentStream) return;
 
-  const now = Date.now();
-  const relative = now - currentStream.startTime;
-  const marker: ClipMarker = {
-    id: `clip_${now}`,
-    startTime: Math.max(0, relative - 10_000),
-    endTime: relative + 10_000,
-    markedAt: now,
-    streamStart: currentStream.startTime,
-    bufferFile: currentStream.bufferFile,
-  };
-  clipMarkers.push(marker);
-  mainWindow?.webContents.send("clip-marked", marker);
-}
+  const requestId = Date.now().toString();
 
-/**
- * Remove outdated buffer files older than 15 minutes.
- */
-function cleanOldBuffers(): void {
-  const cutoff = Date.now() - 15 * 60 * 1000;
-  try {
-    for (const f of fs.readdirSync(bufferDir)) {
-      const full = path.join(bufferDir, f);
-      if (fs.statSync(full).mtime.getTime() < cutoff) fs.unlinkSync(full);
+  // Set up response listener
+  const responseHandler = (event: any, response: any) => {
+    if (response.requestId === requestId) {
+      ipcMain.removeListener("mark-clip-response", responseHandler);
+
+      if (response.success && response.marker) {
+        const marker: ClipMarker = {
+          ...response.marker,
+          streamStart: currentStream!.startTime,
+          bufferFile: currentStream!.bufferFile,
+        };
+
+        clipMarkers.push(marker);
+        mainWindow?.webContents.send("clip-marked", marker);
+      }
     }
-  } catch (err) {
-    console.error("Buffer cleanup failed:", err);
-  }
+  };
+
+  ipcMain.on("mark-clip-response", responseHandler);
+
+  // Send request to renderer
+  mainWindow?.webContents.send("request-mark-clip", {
+    requestId,
+    streamStartTime: currentStream.startTime,
+  });
 }
 
 /**
- * Export a marked clip using FFmpeg.
- * @param data - Clip export data
- * @returns success status and path to output file
+ * Export clip by requesting renderer to handle it.
  */
 async function exportClip(
   data: ClipExportData
 ): Promise<{ success: boolean; outputPath: string }> {
+  return new Promise((resolve, reject) => {
+    const requestId = Date.now().toString();
+
+    // Set up response listener
+    const responseHandler = (event: any, response: any) => {
+      if (response.requestId === requestId) {
+        ipcMain.removeListener("export-clip-response", responseHandler);
+
+        if (response.success && response.blob) {
+          // Handle the blob data from renderer and process with FFmpeg
+          processClipWithFFmpeg(response.blob, data)
+            .then(resolve)
+            .catch(reject);
+        } else {
+          reject(new Error(response.error || "Export failed"));
+        }
+      }
+    };
+
+    ipcMain.on("export-clip-response", responseHandler);
+
+    // Send request to renderer
+    mainWindow?.webContents.send("request-export-clip", {
+      requestId,
+      clipData: data,
+    });
+  });
+}
+
+/**
+ * Process clip blob with FFmpeg
+ */
+async function processClipWithFFmpeg(
+  blobBuffer: ArrayBuffer,
+  data: ClipExportData
+): Promise<{ success: boolean; outputPath: string }> {
   try {
-    const clipBlob = recordingService.getClipBlob(data.startTime, data.endTime);
-
-    if (!clipBlob) {
-      throw new Error("No clip data found for the specified time range");
-    }
-
-    const buffer = await clipBlob.arrayBuffer();
     const tempInput = path.join(bufferDir, `temp_clip_${Date.now()}.webm`);
-    fs.writeFileSync(tempInput, Buffer.from(buffer));
+    fs.writeFileSync(tempInput, Buffer.from(blobBuffer));
 
     const output = path.join(data.outputPath, `${data.outputName}.mp4`);
     const args = [
@@ -262,7 +324,7 @@ async function exportClip(
         try {
           fs.unlinkSync(tempInput);
         } catch (e) {
-          console.warn("Could not delete temp file:", e);
+          logger.warn("Could not delete temp file:", e);
         }
 
         if (code === 0) {
@@ -278,13 +340,28 @@ async function exportClip(
       });
     });
   } catch (error) {
-    console.error("Export failed:", error);
+    logger.error("Export failed:", error);
     throw error;
   }
 }
 
 /**
- * Register all IPC channels for renderer communication.
+ * Remove outdated buffer files.
+ */
+function cleanOldBuffers(): void {
+  const cutoff = Date.now() - 15 * 60 * 1000;
+  try {
+    for (const f of fs.readdirSync(bufferDir)) {
+      const full = path.join(bufferDir, f);
+      if (fs.statSync(full).mtime.getTime() < cutoff) fs.unlinkSync(full);
+    }
+  } catch (err) {
+    logger.error("Buffer cleanup failed:", err);
+  }
+}
+
+/**
+ * Register all IPC channels.
  */
 function setupIpc(): void {
   ipcMain.handle(
@@ -294,6 +371,7 @@ function setupIpc(): void {
       return { success: true };
     }
   );
+
   ipcMain.handle(
     "start-recording",
     async (_: IpcMainInvokeEvent, sourceId?: string) => {
@@ -301,20 +379,25 @@ function setupIpc(): void {
       return { success: true };
     }
   );
+
   ipcMain.handle("stop-recording", () => {
     stopRecording();
     return { success: true };
   });
+
   ipcMain.handle("get-clip-markers", () => clipMarkers);
+
   ipcMain.handle("export-clip", (_: IpcMainInvokeEvent, data) =>
     exportClip(data)
   );
+
   ipcMain.handle("select-output-folder", async () => {
     const res = await dialog.showOpenDialog(mainWindow!, {
       properties: ["openDirectory"],
     });
     return !res.canceled && res.filePaths[0] ? res.filePaths[0] : null;
   });
+
   ipcMain.handle("get-desktop-sources", async () => {
     const srcs = await desktopCapturer.getSources({
       types: ["window", "screen"],

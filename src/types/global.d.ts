@@ -7,16 +7,6 @@ import {
   RecordingStartedInfo,
 } from "@/types/app";
 
-interface IpcRenderer {
-  sendMessage(channel: string, ...args: any[]): void;
-  on(channel: string, func: (...args: any[]) => void): () => void;
-  once(channel: string, func: (...args: any[]) => void): void;
-}
-
-interface DesktopCapturer {
-  getSources(options: any): Promise<any[]>;
-}
-
 export interface ElectronAPI {
   openTwitchStream: (channelName: string) => Promise<{ success: boolean }>;
   startRecording: (sourceId?: string) => Promise<{ success: boolean }>;
@@ -27,7 +17,47 @@ export interface ElectronAPI {
   ) => Promise<{ success: boolean; outputPath: string }>;
   selectOutputFolder: () => Promise<string | null>;
   getDesktopSources: () => Promise<DesktopSource[]>;
-
+  onRequestStartRecording: (
+    callback: (
+      _: IpcRendererEvent,
+      data: { sourceId: string; requestId: string }
+    ) => void
+  ) => void;
+  onRequestStopRecording: (
+    callback: (_: IpcRendererEvent, data: { requestId: string }) => void
+  ) => void;
+  onRequestMarkClip: (
+    callback: (
+      _: IpcRendererEvent,
+      data: { requestId: string; streamStartTime: number }
+    ) => void
+  ) => void;
+  onRequestExportClip: (
+    callback: (
+      _: IpcRendererEvent,
+      data: { requestId: string; clipData: ClipExportData }
+    ) => void
+  ) => void;
+  sendStartRecordingResponse: (response: {
+    requestId: string;
+    success: boolean;
+    error?: string;
+  }) => void;
+  sendStopRecordingResponse: (response: {
+    requestId: string;
+    success: boolean;
+  }) => void;
+  sendMarkClipResponse: (response: {
+    requestId: string;
+    success: boolean;
+    marker?: any;
+  }) => void;
+  sendExportClipResponse: (response: {
+    requestId: string;
+    success: boolean;
+    blob?: ArrayBuffer;
+    error?: string;
+  }) => void;
   onRecordingStarted: (
     callback: (_: IpcRendererEvent, info: RecordingStartedInfo) => void
   ) => void;

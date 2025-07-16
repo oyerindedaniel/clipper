@@ -32,6 +32,8 @@ import {
 import { IpcRendererEvent } from "electron";
 import { toast } from "sonner";
 import { normalizeError } from "@/utils/error-utils";
+import recordingService from "@/services/recording-service";
+import logger from "@/utils/logger";
 
 interface ClipEditorProps {
   clip: ClipMarker | null;
@@ -73,6 +75,8 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
     const video = videoRef.current;
     if (!video) return;
 
+    let objectUrl: string | null = null;
+
     const handleTimeUpdate = () => {
       setCurrentTime(video.currentTime * 1000);
     };
@@ -85,19 +89,53 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
       }
     };
 
+    const handleError = (e: Event) => {
+      logger.error("Video load error:", e);
+      const videoElement = e.target as HTMLVideoElement;
+      logger.error("Video error details:", {
+        error: videoElement.error,
+        networkState: videoElement.networkState,
+        readyState: videoElement.readyState,
+        currentSrc: videoElement.currentSrc,
+      });
+    };
+
     const handlePlay = () => setIsPlaying(true);
     const handlePause = () => setIsPlaying(false);
+
+    if (clip && typeof window !== "undefined" && recordingService) {
+      logger.log("Requesting clip blob for:", {
+        clipId: clip.id,
+        startTime: clip.startTime,
+        endTime: clip.endTime,
+      });
+
+      const blob = recordingService.getClipBlob(clip.startTime, clip.endTime);
+      if (blob && blob.size > 0) {
+        objectUrl = URL.createObjectURL(blob);
+        video.src = objectUrl;
+        logger.log("Set video src to blob URL:", objectUrl);
+      } else {
+        logger.error("Failed to get valid clip blob:", { blob });
+      }
+    }
 
     video.addEventListener("timeupdate", handleTimeUpdate);
     video.addEventListener("loadedmetadata", handleLoadedMetadata);
     video.addEventListener("play", handlePlay);
     video.addEventListener("pause", handlePause);
+    video.addEventListener("error", handleError);
 
     return () => {
       video.removeEventListener("timeupdate", handleTimeUpdate);
       video.removeEventListener("loadedmetadata", handleLoadedMetadata);
       video.removeEventListener("play", handlePlay);
       video.removeEventListener("pause", handlePause);
+      video.removeEventListener("error", handleError);
+
+      if (objectUrl) {
+        URL.revokeObjectURL(objectUrl);
+      }
     };
   }, [clip]);
 
@@ -289,7 +327,7 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
         toast.error("Export failed");
       }
     } catch (error) {
-      console.error("Export error:", error);
+      logger.error("Export error:", error);
       const normalizedError = normalizeError(error);
       toast.error(`Export failed: ${normalizedError.message}`);
     } finally {
@@ -876,8 +914,7 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
               <video
                 ref={videoRef}
                 className="max-w-full max-h-full"
-                src={`file://${clip.bufferFile}`}
-                onError={(e) => console.error("Video load error:", e)}
+                onError={(e) => logger.error("Video load error:", e)}
               />
 
               <canvas

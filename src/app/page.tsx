@@ -9,6 +9,7 @@ import { ClipMarker, RecordingStartedInfo } from "@/types/app";
 import { IpcRendererEvent } from "electron";
 import { normalizeError } from "@/utils/error-utils";
 import { toast } from "sonner";
+import recordingService from "@/services/recording-service";
 
 type TabKey = "stream" | "clips" | "editor";
 
@@ -25,8 +26,147 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.electronAPI) {
+      // Handle recording service requests from main process
+      window.electronAPI.onRequestStartRecording(
+        async (event: IpcRendererEvent, { sourceId, requestId }) => {
+          try {
+            console.log("Received start recording request:", {
+              sourceId,
+              requestId,
+            });
+            const result = await recordingService.startRecording(sourceId);
+            window.electronAPI.sendStartRecordingResponse({
+              requestId,
+              success: result.success,
+            });
+          } catch (error) {
+            console.error("Failed to start recording:", error);
+            window.electronAPI.sendStartRecordingResponse({
+              requestId,
+              success: false,
+              error: error instanceof Error ? error.message : "Unknown error",
+            });
+          }
+        }
+      );
+
+      window.electronAPI.onRequestStopRecording(
+        async (event: IpcRendererEvent, { requestId }) => {
+          try {
+            console.log("Received stop recording request:", { requestId });
+            recordingService.stopRecording();
+            window.electronAPI.sendStopRecordingResponse({
+              requestId,
+              success: true,
+            });
+          } catch (error) {
+            console.error("Failed to stop recording:", error);
+            window.electronAPI.sendStopRecordingResponse({
+              requestId,
+              success: false,
+            });
+          }
+        }
+      );
+
+      window.electronAPI.onRequestMarkClip(
+        async (event: IpcRendererEvent, { requestId, streamStartTime }) => {
+          try {
+            console.log("Received mark clip request:", {
+              requestId,
+              streamStartTime,
+            });
+
+            if (!recordingService.isCurrentlyRecording()) {
+              window.electronAPI.sendMarkClipResponse({
+                requestId,
+                success: false,
+              });
+              return;
+            }
+
+            const now = Date.now();
+            const recordingStartTime = recordingService.getRecordingStartTime();
+
+            if (!recordingStartTime) {
+              window.electronAPI.sendMarkClipResponse({
+                requestId,
+                success: false,
+              });
+              return;
+            }
+
+            const relative = now - recordingStartTime;
+            const bufferDuration = recordingService.getBufferDuration();
+
+            const clipStart = Math.max(0, relative - 10_000); // 10 seconds before
+            const clipEnd = Math.min(relative + 10_000, bufferDuration); // 10 seconds after
+
+            const marker = {
+              id: `clip_${now}`,
+              startTime: clipStart,
+              endTime: clipEnd,
+              markedAt: now,
+            };
+
+            window.electronAPI.sendMarkClipResponse({
+              requestId,
+              success: true,
+              marker,
+            });
+          } catch (error) {
+            console.error("Failed to mark clip:", error);
+            window.electronAPI.sendMarkClipResponse({
+              requestId,
+              success: false,
+            });
+          }
+        }
+      );
+
+      window.electronAPI.onRequestExportClip(
+        async (event, { requestId, clipData }) => {
+          try {
+            console.log("Received export clip request:", {
+              requestId,
+              clipData,
+            });
+
+            const blob = recordingService.getClipBlob(
+              clipData.startTime,
+              clipData.endTime
+            );
+
+            if (!blob || blob.size === 0) {
+              window.electronAPI.sendExportClipResponse({
+                requestId,
+                success: false,
+                error: "No clip data found for the specified time range",
+              });
+              return;
+            }
+
+            const arrayBuffer = await blob.arrayBuffer();
+
+            window.electronAPI.sendExportClipResponse({
+              requestId,
+              success: true,
+              blob: arrayBuffer,
+            });
+          } catch (error) {
+            console.error("Failed to export clip:", error);
+            window.electronAPI.sendExportClipResponse({
+              requestId,
+              success: false,
+              error: error instanceof Error ? error.message : "Unknown error",
+            });
+          }
+        }
+      );
+
+      // Existing listeners for UI updates
       window.electronAPI.onRecordingStarted(
-        (event: IpcRendererEvent, data: RecordingStartedInfo) => {
+        (event, data: RecordingStartedInfo) => {
           setIsRecording(true);
           setRecordingStartTime(data.startTime);
           setCurrentStream(data);
@@ -39,24 +179,24 @@ export default function Home() {
         setCurrentStream(null);
       });
 
-      window.electronAPI.onClipMarked(
-        (event: IpcRendererEvent, clipData: ClipMarker) => {
-          setClipMarkers((prev: ClipMarker[]) => [...prev, clipData]);
-        }
-      );
+      window.electronAPI.onClipMarked((event, clipData: ClipMarker) => {
+        setClipMarkers((prev: ClipMarker[]) => [...prev, clipData]);
+      });
 
-      window.electronAPI.onRecordingError(
-        (event: IpcRendererEvent, error: string) => {
-          console.error("Recording error:", error);
-          setIsRecording(false);
-        }
-      );
+      window.electronAPI.onRecordingError((event, error: string) => {
+        console.error("Recording error:", error);
+        setIsRecording(false);
+      });
 
       loadClipMarkers();
     }
 
     return () => {
       if (typeof window !== "undefined" && window.electronAPI) {
+        window.electronAPI.removeAllListeners("request-start-recording");
+        window.electronAPI.removeAllListeners("request-stop-recording");
+        window.electronAPI.removeAllListeners("request-mark-clip");
+        window.electronAPI.removeAllListeners("request-export-clip");
         window.electronAPI.removeAllListeners("recording-started");
         window.electronAPI.removeAllListeners("recording-stopped");
         window.electronAPI.removeAllListeners("clip-marked");
