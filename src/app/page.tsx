@@ -10,6 +10,8 @@ import { IpcRendererEvent } from "electron";
 import { normalizeError } from "@/utils/error-utils";
 import { toast } from "sonner";
 import recordingService from "@/services/recording-service";
+import logger from "@/utils/logger";
+import { waitUntilBufferCatchesUp } from "@/utils/app";
 
 type TabKey = "stream" | "clips" | "editor";
 
@@ -26,11 +28,10 @@ export default function Home() {
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.electronAPI) {
-      // Handle recording service requests from main process
       window.electronAPI.onRequestStartRecording(
         async (event: IpcRendererEvent, { sourceId, requestId }) => {
           try {
-            console.log("Received start recording request:", {
+            logger.log("Received start recording request:", {
               sourceId,
               requestId,
             });
@@ -40,7 +41,7 @@ export default function Home() {
               success: result.success,
             });
           } catch (error) {
-            console.error("Failed to start recording:", error);
+            logger.error("Failed to start recording:", error);
             window.electronAPI.sendStartRecordingResponse({
               requestId,
               success: false,
@@ -53,14 +54,14 @@ export default function Home() {
       window.electronAPI.onRequestStopRecording(
         async (event: IpcRendererEvent, { requestId }) => {
           try {
-            console.log("Received stop recording request:", { requestId });
+            logger.log("Received stop recording request:", { requestId });
             recordingService.stopRecording();
             window.electronAPI.sendStopRecordingResponse({
               requestId,
               success: true,
             });
           } catch (error) {
-            console.error("Failed to stop recording:", error);
+            logger.error("Failed to stop recording:", error);
             window.electronAPI.sendStopRecordingResponse({
               requestId,
               success: false,
@@ -72,7 +73,7 @@ export default function Home() {
       window.electronAPI.onRequestMarkClip(
         async (event: IpcRendererEvent, { requestId, streamStartTime }) => {
           try {
-            console.log("Received mark clip request:", {
+            logger.log("Received mark clip request:", {
               requestId,
               streamStartTime,
             });
@@ -97,10 +98,14 @@ export default function Home() {
             }
 
             const relative = now - recordingStartTime;
-            const bufferDuration = recordingService.getBufferDuration();
+            const desiredEnd = relative + 10_000;
+            await waitUntilBufferCatchesUp(desiredEnd);
 
             const clipStart = Math.max(0, relative - 10_000); // 10 seconds before
-            const clipEnd = Math.min(relative + 10_000, bufferDuration); // 10 seconds after
+            const clipEnd = Math.min(
+              desiredEnd,
+              recordingService.getBufferDuration()
+            ); // 10 seconds after
 
             const marker = {
               id: `clip_${now}`,
@@ -115,7 +120,7 @@ export default function Home() {
               marker,
             });
           } catch (error) {
-            console.error("Failed to mark clip:", error);
+            logger.error("Failed to mark clip:", error);
             window.electronAPI.sendMarkClipResponse({
               requestId,
               success: false,
@@ -127,7 +132,7 @@ export default function Home() {
       window.electronAPI.onRequestExportClip(
         async (event, { requestId, clipData }) => {
           try {
-            console.log("Received export clip request:", {
+            logger.log("Received export clip request:", {
               requestId,
               clipData,
             });
@@ -154,7 +159,7 @@ export default function Home() {
               blob: arrayBuffer,
             });
           } catch (error) {
-            console.error("Failed to export clip:", error);
+            logger.error("Failed to export clip:", error);
             window.electronAPI.sendExportClipResponse({
               requestId,
               success: false,
@@ -184,7 +189,7 @@ export default function Home() {
       });
 
       window.electronAPI.onRecordingError((event, error: string) => {
-        console.error("Recording error:", error);
+        logger.error("Recording error:", error);
         setIsRecording(false);
       });
 
@@ -210,7 +215,7 @@ export default function Home() {
       const markers = await window.electronAPI.getClipMarkers();
       setClipMarkers(markers);
     } catch (error) {
-      console.error("Failed to load clip markers:", error);
+      logger.error("Failed to load clip markers:", error);
       const normalizedError = normalizeError(error);
       toast.error(`${normalizedError.message}`);
     }
@@ -220,7 +225,7 @@ export default function Home() {
     try {
       await window.electronAPI.startRecording();
     } catch (error) {
-      console.error("Failed to start recording:", error);
+      logger.error("Failed to start recording:", error);
       const normalizedError = normalizeError(error);
       toast.error(`${normalizedError.message}`);
     }
@@ -230,7 +235,7 @@ export default function Home() {
     try {
       await window.electronAPI.stopRecording();
     } catch (error) {
-      console.error("Failed to stop recording:", error);
+      logger.error("Failed to stop recording:", error);
       const normalizedError = normalizeError(error);
       toast.error(`${normalizedError.message}`);
     }

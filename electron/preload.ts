@@ -4,8 +4,11 @@ import {
   ClipMarker,
   DesktopSource,
   ExportProgressInfo,
+  MarkClipResponse,
   RecordingStartedInfo,
-} from "@/types/app";
+  StartRecordingResponse,
+  StopRecordingResponse,
+} from "../src/types/app";
 
 /**
  * Exposed APIs for the renderer process.
@@ -66,35 +69,19 @@ contextBridge.exposeInMainWorld("electronAPI", {
   },
 
   // Response senders
-  sendStartRecordingResponse: (response: {
-    requestId: string;
-    success: boolean;
-    error?: string;
-  }): void => {
+  sendStartRecordingResponse: (response: StartRecordingResponse): void => {
     ipcRenderer.send("start-recording-response", response);
   },
 
-  sendStopRecordingResponse: (response: {
-    requestId: string;
-    success: boolean;
-  }): void => {
+  sendStopRecordingResponse: (response: StopRecordingResponse): void => {
     ipcRenderer.send("stop-recording-response", response);
   },
 
-  sendMarkClipResponse: (response: {
-    requestId: string;
-    success: boolean;
-    marker?: any;
-  }): void => {
+  sendMarkClipResponse: (response: MarkClipResponse): void => {
     ipcRenderer.send("mark-clip-response", response);
   },
 
-  sendExportClipResponse: (response: {
-    requestId: string;
-    success: boolean;
-    blob?: ArrayBuffer;
-    error?: string;
-  }): void => {
+  sendExportClipResponse: (response: ExportProgressInfo): void => {
     ipcRenderer.send("export-clip-response", response);
   },
 

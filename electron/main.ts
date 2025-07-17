@@ -6,13 +6,23 @@ import {
   desktopCapturer,
   dialog,
   IpcMainInvokeEvent,
+  IpcMainEvent,
 } from "electron";
 import { spawn, ChildProcessWithoutNullStreams } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
-import { ClipExportData, ClipMarker, StreamSession } from "../src/types/app";
+import {
+  ClipExportData,
+  ClipMarker,
+  StreamSession,
+  StartRecordingResponse,
+  StopRecordingResponse,
+  MarkClipResponse,
+  ExportClipResponse,
+} from "../src/types/app";
 import logger from "../src/utils/logger";
+import DesktopCaptureManager from "./services/desktop-capture";
 
 let mainWindow: BrowserWindow | null = null;
 let twitchWindow: BrowserWindow | null = null;
@@ -21,7 +31,8 @@ let recordingProcess: ChildProcessWithoutNullStreams | null = null;
 let clipMarkers: ClipMarker[] = [];
 let currentStream: StreamSession | null = null;
 
-const bufferDir = path.join(os.tmpdir(), "twitch-recorder-buffer");
+const bufferDir = path.join(os.homedir(), "twitch-recorder-buffer");
+const captureManager = DesktopCaptureManager.getInstance();
 
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
 
@@ -109,24 +120,11 @@ async function startRecording(sourceId?: string): Promise<void> {
   if (isRecording) return;
 
   try {
-    const sources = await desktopCapturer.getSources({
-      types: ["window", "screen"],
-    });
-
-    let source;
-
-    if (sourceId) {
-      source = sources.find((s) => s.id === sourceId);
-    }
-
-    if (!source && twitchWindow) {
-      const twitchTitle = twitchWindow.getTitle();
-      source = sources.find((s) => s.name === twitchTitle);
-    }
-
-    if (!source) {
-      source = sources.find((s) => /twitch|chrome/i.test(s.name));
-    }
+    console.log({ sourceId, twitchWindow });
+    const source = await captureManager.findBestCaptureSource(
+      sourceId,
+      twitchWindow
+    );
 
     if (!source) throw new Error("No suitable capture source found");
 
@@ -135,7 +133,10 @@ async function startRecording(sourceId?: string): Promise<void> {
       const requestId = Date.now().toString();
 
       // Set up response listener
-      const responseHandler = (event: any, response: any) => {
+      const responseHandler = (
+        event: IpcMainEvent,
+        response: StartRecordingResponse
+      ) => {
         if (response.requestId === requestId) {
           ipcMain.removeListener("start-recording-response", responseHandler);
 
@@ -171,6 +172,9 @@ async function startRecording(sourceId?: string): Promise<void> {
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     logger.error("Recording failed:", msg);
+
+    captureManager.clearRetryCache();
+
     mainWindow?.webContents.send("recording-error", msg);
     throw err;
   }
@@ -186,7 +190,10 @@ async function stopRecording(): Promise<void> {
     const requestId = Date.now().toString();
 
     // Set up response listener
-    const responseHandler = (event: any, response: any) => {
+    const responseHandler = (
+      event: IpcMainEvent,
+      response: StopRecordingResponse
+    ) => {
       if (response.requestId === requestId) {
         ipcMain.removeListener("stop-recording-response", responseHandler);
 
@@ -196,6 +203,9 @@ async function stopRecording(): Promise<void> {
           recordingProcess.kill();
           recordingProcess = null;
         }
+
+        captureManager.clearRetryCache();
+
         mainWindow?.webContents.send("recording-stopped");
         resolve();
       }
@@ -217,7 +227,7 @@ function markClip(): void {
   const requestId = Date.now().toString();
 
   // Set up response listener
-  const responseHandler = (event: any, response: any) => {
+  const responseHandler = (event: IpcMainEvent, response: MarkClipResponse) => {
     if (response.requestId === requestId) {
       ipcMain.removeListener("mark-clip-response", responseHandler);
 
@@ -227,6 +237,8 @@ function markClip(): void {
           streamStart: currentStream!.startTime,
           bufferFile: currentStream!.bufferFile,
         };
+
+        console.log({ marker });
 
         clipMarkers.push(marker);
         mainWindow?.webContents.send("clip-marked", marker);
@@ -253,7 +265,10 @@ async function exportClip(
     const requestId = Date.now().toString();
 
     // Set up response listener
-    const responseHandler = (event: any, response: any) => {
+    const responseHandler = (
+      event: IpcMainEvent,
+      response: ExportClipResponse
+    ) => {
       if (response.requestId === requestId) {
         ipcMain.removeListener("export-clip-response", responseHandler);
 
@@ -399,14 +414,13 @@ function setupIpc(): void {
   });
 
   ipcMain.handle("get-desktop-sources", async () => {
-    const srcs = await desktopCapturer.getSources({
-      types: ["window", "screen"],
-    });
-    return srcs.map((s) => ({
-      id: s.id,
-      name: s.name,
-      thumbnail: s.thumbnail.toDataURL(),
-    }));
+    try {
+      const sources = await captureManager.getDesktopSources();
+      return sources;
+    } catch (error) {
+      logger.error("Failed to get desktop sources:", error);
+      return [];
+    }
   });
 }
 

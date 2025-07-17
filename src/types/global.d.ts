@@ -5,6 +5,10 @@ import {
   DesktopSource,
   ExportProgressInfo,
   RecordingStartedInfo,
+  StartRecordingResponse,
+  StopRecordingResponse,
+  MarkClipResponse,
+  ExportClipResponse,
 } from "@/types/app";
 
 export interface ElectronAPI {
@@ -38,26 +42,10 @@ export interface ElectronAPI {
       data: { requestId: string; clipData: ClipExportData }
     ) => void
   ) => void;
-  sendStartRecordingResponse: (response: {
-    requestId: string;
-    success: boolean;
-    error?: string;
-  }) => void;
-  sendStopRecordingResponse: (response: {
-    requestId: string;
-    success: boolean;
-  }) => void;
-  sendMarkClipResponse: (response: {
-    requestId: string;
-    success: boolean;
-    marker?: any;
-  }) => void;
-  sendExportClipResponse: (response: {
-    requestId: string;
-    success: boolean;
-    blob?: ArrayBuffer;
-    error?: string;
-  }) => void;
+  sendStartRecordingResponse: (response: StartRecordingResponse) => void;
+  sendStopRecordingResponse: (response: StopRecordingResponse) => void;
+  sendMarkClipResponse: (response: MarkClipResponse) => void;
+  sendExportClipResponse: (response: ExportClipResponse) => void;
   onRecordingStarted: (
     callback: (_: IpcRendererEvent, info: RecordingStartedInfo) => void
   ) => void;

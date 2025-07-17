@@ -94,3 +94,36 @@ export interface RecordedChunk {
   data: Blob;
   timestamp: number;
 }
+
+/**
+ * Base structure for all IPC response payloads.
+ */
+interface BaseResponse {
+  requestId: string;
+  success: boolean;
+  error?: string;
+}
+
+/**
+ * Response returned after attempting to start a recording.
+ */
+export interface StartRecordingResponse extends BaseResponse {}
+
+/**
+ * Response returned after attempting to stop a recording.
+ */
+export interface StopRecordingResponse extends BaseResponse {}
+
+/**
+ * Response returned after attempting to mark a clip.
+ */
+export interface MarkClipResponse extends BaseResponse {
+  marker?: Omit<ClipMarker, "streamStart" | "bufferFile">;
+}
+
+/**
+ * Response returned after attempting to export a clip.
+ */
+export interface ExportClipResponse extends BaseResponse {
+  blob?: ArrayBuffer;
+}

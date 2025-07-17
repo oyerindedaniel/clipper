@@ -137,7 +137,7 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [clip]);
+  }, [clip?.id]);
 
   const formatTime = (milliseconds: number) => {
     const seconds = Math.floor(milliseconds / 1000);
@@ -911,11 +911,7 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
         <div className="flex-1 flex flex-col">
           {showPreview && clip && (
             <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
-              <video
-                ref={videoRef}
-                className="max-w-full max-h-full"
-                onError={(e) => logger.error("Video load error:", e)}
-              />
+              <video ref={videoRef} className="max-w-full max-h-full" />
 
               <canvas
                 ref={canvasRef}
