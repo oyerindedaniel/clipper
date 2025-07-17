@@ -19,8 +19,20 @@ class RecordingService {
    * Starts recording a screen and system audio stream.
    * @param sourceId The desktop capture source ID.
    */
-  public async startRecording(sourceId: string): Promise<{ success: boolean }> {
+  public async startRecording(
+    sourceId: string,
+    resetBuffer: boolean = true
+  ): Promise<{ success: boolean }> {
     try {
+      if (resetBuffer) {
+        this.reset();
+      }
+
+      if (this.isRecording) {
+        logger.warn("⚠️ Recording already in progress");
+        return { success: false };
+      }
+
       logger.log("🚀 Starting recording with sourceId:", sourceId);
       logger.log("⏰ Recording start time:", new Date().toISOString());
 
@@ -136,6 +148,8 @@ class RecordingService {
         });
         this.isRecording = false;
         this.cleanupStream();
+
+        logger.log("✅ Recording stopped successfully");
       };
 
       this.mediaRecorder.onerror = (event: ErrorEvent): void => {
@@ -225,10 +239,6 @@ class RecordingService {
       this.bufferInterval = null;
       logger.log("🧹 Buffer management stopped");
     }
-
-    this.cleanupStream();
-    this.isRecording = false;
-    logger.log("✅ Recording stopped successfully");
   }
 
   /**
@@ -283,6 +293,30 @@ class RecordingService {
       this.stream.getTracks().forEach((track) => track.stop());
       this.stream = null;
     }
+
+    this.mediaRecorder = null;
+
+    if (this.bufferInterval) {
+      clearInterval(this.bufferInterval);
+      this.bufferInterval = null;
+    }
+
+    // DO NOT clear: recordedChunks, startTime, isRecording
+    // These are needed for clip extraction after recording stops
+  }
+
+  /**
+   * Completely resets the recording service state.
+   * Call this when you want to start fresh (e.g., new recording session).
+   */
+  public reset(): void {
+    this.cleanupStream();
+
+    this.recordedChunks = [];
+    this.isRecording = false;
+    this.startTime = null;
+
+    logger.log("🔄 RecordingService reset completely");
   }
 
   /**

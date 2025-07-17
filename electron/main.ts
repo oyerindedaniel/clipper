@@ -3,11 +3,11 @@ import {
   BrowserWindow,
   ipcMain,
   globalShortcut,
-  desktopCapturer,
   dialog,
   IpcMainInvokeEvent,
   IpcMainEvent,
 } from "electron";
+import ffmpegStatic from "ffmpeg-static";
 import { spawn, ChildProcessWithoutNullStreams } from "child_process";
 import * as path from "path";
 import * as fs from "fs";
@@ -305,6 +305,13 @@ async function processClipWithFFmpeg(
     fs.writeFileSync(tempInput, Buffer.from(blobBuffer));
 
     const output = path.join(data.outputPath, `${data.outputName}.mp4`);
+
+    const ffmpegPath = ffmpegStatic;
+
+    if (!ffmpegPath) {
+      throw new Error("FFmpeg binary not found");
+    }
+
     const args = [
       "-i",
       tempInput,
@@ -321,7 +328,7 @@ async function processClipWithFFmpeg(
     ];
 
     return new Promise((resolve, reject) => {
-      const ff = spawn(path.join(__dirname, "../ffmpeg/ffmpeg"), args);
+      const ff = spawn(ffmpegPath, args);
       recordingProcess = ff;
 
       ff.stderr.on("data", (chunk) => {
@@ -395,8 +402,8 @@ function setupIpc(): void {
     }
   );
 
-  ipcMain.handle("stop-recording", () => {
-    stopRecording();
+  ipcMain.handle("stop-recording", async () => {
+    await stopRecording();
     return { success: true };
   });
 

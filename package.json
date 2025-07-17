@@ -21,9 +21,12 @@
     "electron:dist:all": "cross-env ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES=true pnpm run electron:build && electron-builder --win --ia32 --x64 --publish=never"
   },
   "dependencies": {
+    "@ffmpeg/ffmpeg": "^0.12.15",
+    "@ffmpeg/util": "^0.12.2",
     "cross-env": "^7.0.3",
     "electron": "^36.4.0",
     "electron-builder": "^26.0.12",
+    "ffmpeg-static": "^5.2.0",
     "lucide-react": "^0.525.0",
     "next": "15.3.5",
     "next-themes": "^0.4.6",
@@ -44,6 +47,17 @@
     "tailwindcss": "^4",
     "typescript": "^5",
     "wait-on": "^8.0.3"
+  },
+  "build": {
+    "extraResources": [
+      {
+        "from": "ffmpeg/",
+        "to": "ffmpeg/",
+        "filter": [
+          "**/*"
+        ]
+      }
+    ]
   },
   "packageManager": "pnpm@9.13.2+sha512.88c9c3864450350e65a33587ab801acf946d7c814ed1134da4a924f6df5a2120fd36b46aab68f7cd1d413149112d53c7db3a4136624cfd00ff1846a0c6cef48a"
 }

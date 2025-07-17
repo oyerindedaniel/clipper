@@ -55,7 +55,7 @@ export default function Home() {
         async (event: IpcRendererEvent, { requestId }) => {
           try {
             logger.log("Received stop recording request:", { requestId });
-            recordingService.stopRecording();
+            await recordingService.stopRecording();
             window.electronAPI.sendStopRecordingResponse({
               requestId,
               success: true,

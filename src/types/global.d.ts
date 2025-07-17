@@ -13,7 +13,10 @@ import {
 
 export interface ElectronAPI {
   openTwitchStream: (channelName: string) => Promise<{ success: boolean }>;
-  startRecording: (sourceId?: string) => Promise<{ success: boolean }>;
+  startRecording: (
+    sourceId?: string,
+    resetBuffer?: boolean
+  ) => Promise<{ success: boolean }>;
   stopRecording: () => Promise<{ success: boolean }>;
   getClipMarkers: () => Promise<ClipMarker[]>;
   exportClip: (
