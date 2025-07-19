@@ -3,7 +3,7 @@ import recordingService from "@/services/recording-service";
 /**
  * Waits until the recording buffer has reached or exceeded the given target duration.
  */
-async function waitUntilBufferCatchesUp(target: number, timeout = 15000) {
+async function waitUntilBufferCatchesUp(target: number, timeout = 20000) {
   const start = Date.now();
   return new Promise<void>((resolve, reject) => {
     const check = () => {

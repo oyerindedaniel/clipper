@@ -50,8 +50,8 @@ class RecordingService {
             chromeMediaSource: "desktop",
             chromeMediaSourceId: sourceId,
             minWidth: 1280,
-            // maxWidth: 1920,
-            maxWidth: 1280,
+            maxWidth: 1920,
+            // maxWidth: 1280,
             minHeight: 720,
             maxHeight: 1080,
             minFrameRate: 30,
@@ -320,38 +320,41 @@ class RecordingService {
   }
 
   /**
-   * Retrieves a specific clip blob from the recorded buffer.
-   * @param startTime The start timestamp (relative to start of recording).
-   * @param endTime The end timestamp.
-   * @returns A Blob of the clip or null if no data found.
+   * Creates a trimmed WebM clip from recorded chunks.
    */
-  public getClipBlob(startTime: number, endTime: number): Blob | null {
-    // Finds chunks that overlap with the requested time range
-    // Includes a small buffer before and after for better playback
-    const bufferMs = 2000; // 2 second buffer
-    const adjustedStart = Math.max(0, startTime - bufferMs);
-    const adjustedEnd = endTime + bufferMs;
-
-    const relevantChunks = this.recordedChunks.filter(
-      (chunk) =>
-        chunk.timestamp >= adjustedStart && chunk.timestamp <= adjustedEnd
-    );
-
-    logger.log("Clip blob creation:", {
+  public async getClipBlob(
+    startTime: number,
+    endTime: number
+  ): Promise<Blob | null> {
+    logger.log("🎞️ Clip blob creation:", {
       requestedRange: { startTime, endTime },
-      adjustedRange: { adjustedStart, adjustedEnd },
-      availableChunks: this.recordedChunks.length,
-      relevantChunks: relevantChunks.length,
-      chunkTimestamps: relevantChunks.map((c) => c.timestamp),
+      totalChunks: this.recordedChunks.length,
+      bufferDuration: this.getBufferDuration(),
     });
 
-    if (relevantChunks.length === 0) {
-      logger.warn("No chunks found for clip range:", { startTime, endTime });
+    if (this.recordedChunks.length === 0) {
+      logger.warn("⚠️ No chunks available for clip");
       return null;
     }
 
-    const blobParts = relevantChunks.map((chunk) => chunk.data);
-    return new Blob(blobParts, { type: "video/webm" });
+    try {
+      const chunkArrayBuffers = await Promise.all(
+        this.recordedChunks.map((chunk) => chunk.data.arrayBuffer())
+      );
+
+      const remuxedBuffer = await window.electronAPI.remuxClip(
+        chunkArrayBuffers,
+        startTime,
+        endTime
+      );
+
+      const finalBlob = new Blob([remuxedBuffer], { type: "video/webm" });
+      logger.log("✅ Remuxing successful, returning final clip blob");
+      return finalBlob;
+    } catch (error) {
+      logger.error("❌ Remuxing failed:", error);
+      return null;
+    }
   }
 
   /**

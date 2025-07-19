@@ -21,9 +21,15 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("start-recording", sourceId),
   stopRecording: (): Promise<{ success: boolean }> =>
     ipcRenderer.invoke("stop-recording"),
-
+  remuxClip: (
+    chunks: ArrayBuffer[],
+    clipStartMs: number,
+    clipEndMs: number
+  ): Promise<ArrayBuffer> =>
+    ipcRenderer.invoke("remux-clip", chunks, clipStartMs, clipEndMs),
   getClipMarkers: (): Promise<ClipMarker[]> =>
     ipcRenderer.invoke("get-clip-markers"),
+
   exportClip: (
     clipData: ClipExportData
   ): Promise<{ success: boolean; outputPath: string }> =>

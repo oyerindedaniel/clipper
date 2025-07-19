@@ -120,7 +120,7 @@ async function startRecording(sourceId?: string): Promise<void> {
   if (isRecording) return;
 
   try {
-    console.log({ sourceId, twitchWindow });
+    logger.log({ sourceId, twitchWindow });
     const source = await captureManager.findBestCaptureSource(
       sourceId,
       twitchWindow
@@ -238,7 +238,7 @@ function markClip(): void {
           bufferFile: currentStream!.bufferFile,
         };
 
-        console.log({ marker });
+        logger.log({ marker });
 
         clipMarkers.push(marker);
         mainWindow?.webContents.send("clip-marked", marker);
@@ -367,6 +367,114 @@ async function processClipWithFFmpeg(
   }
 }
 
+async function remuxClipWithFFmpeg(
+  chunks: ArrayBuffer[],
+  clipStartMs: number,
+  clipEndMs: number
+): Promise<ArrayBuffer> {
+  try {
+    const tempInput = path.join(bufferDir, `temp_remux_${Date.now()}.webm`);
+    const tempOutput = path.join(
+      bufferDir,
+      `temp_remux_out_${Date.now()}.webm`
+    );
+
+    // 🧱 Combine all chunks into one WebM file
+    const combinedBuffer = Buffer.concat(
+      chunks.map((chunk) => Buffer.from(chunk))
+    );
+    fs.writeFileSync(tempInput, combinedBuffer);
+
+    const ffmpegPath = ffmpegStatic;
+
+    logger.log({ ffmpegPath });
+
+    if (!ffmpegPath) {
+      throw new Error("FFmpeg binary not found");
+    }
+
+    const startSec = (clipStartMs / 1000).toFixed(3);
+    const durationSec = ((clipEndMs - clipStartMs) / 1000).toFixed(3);
+
+    logger.log({ startSec, durationSec });
+
+    const args = [
+      "-ss",
+      startSec,
+      "-i",
+      tempInput,
+      "-t",
+      durationSec,
+      "-c",
+      "copy",
+      "-avoid_negative_ts",
+      "make_zero",
+      "-y",
+      tempOutput,
+    ];
+
+    logger.log("[FFMPEG ARGS]", args);
+
+    return await new Promise((resolve, reject) => {
+      const ff = spawn(ffmpegPath, args);
+
+      // ✅ Capture FFmpeg output
+      ff.stdout.on("data", (data) => {
+        logger.log("[FFMPEG STDOUT]:", data.toString());
+      });
+
+      ff.stderr.on("data", (data) => {
+        logger.error("[FFMPEG STDERR]:", data.toString());
+      });
+
+      ff.on("error", (err) => {
+        logger.error("FFmpeg spawn failed:", err);
+        reject(new Error(`Failed to spawn FFmpeg: ${err.message}`));
+      });
+
+      ff.on("close", (code) => {
+        try {
+          if (fs.existsSync(tempInput)) {
+            const stat = fs.statSync(tempInput);
+            logger.log(`[TEMP INPUT]: ${tempInput} (${stat.size} bytes)`);
+            fs.unlinkSync(tempInput);
+          }
+        } catch (e) {
+          logger.warn("Could not delete temp input file:", e);
+        }
+
+        if (code === 0) {
+          try {
+            if (!fs.existsSync(tempOutput)) {
+              return reject(
+                new Error("Output file not found after FFmpeg run")
+              );
+            }
+
+            const outputBuffer = fs.readFileSync(tempOutput);
+            fs.unlinkSync(tempOutput);
+
+            const result = outputBuffer.buffer.slice(
+              outputBuffer.byteOffset,
+              outputBuffer.byteOffset + outputBuffer.byteLength
+            );
+
+            resolve(result);
+          } catch (err) {
+            logger.error("Failed to read output file:", err);
+            reject(new Error("Failed to read output file"));
+          }
+        } else {
+          reject(new Error(`FFmpeg exited with code ${code}`));
+        }
+      });
+    });
+  } catch (error) {
+    logger.error("Remux failed:", error);
+    throw error;
+  }
+}
+
 /**
  * Remove outdated buffer files.
  */
@@ -429,6 +537,18 @@ function setupIpc(): void {
       return [];
     }
   });
+
+  ipcMain.handle(
+    "remux-clip",
+    async (
+      _: IpcMainInvokeEvent,
+      chunks: ArrayBuffer[],
+      clipStartMs: number,
+      clipEndMs: number
+    ) => {
+      return remuxClipWithFFmpeg(chunks, clipStartMs, clipEndMs);
+    }
+  );
 }
 
 // App lifecycle

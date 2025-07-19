@@ -99,7 +99,8 @@ export default function Home() {
 
             const relative = now - recordingStartTime;
             const desiredEnd = relative + 10_000;
-            await waitUntilBufferCatchesUp(desiredEnd);
+            const endBuffer = 3000;
+            await waitUntilBufferCatchesUp(desiredEnd + endBuffer);
 
             const clipStart = Math.max(0, relative - 10_000); // 10 seconds before
             const clipEnd = Math.min(
@@ -137,7 +138,7 @@ export default function Home() {
               clipData,
             });
 
-            const blob = recordingService.getClipBlob(
+            const blob = await recordingService.getClipBlob(
               clipData.startTime,
               clipData.endTime
             );

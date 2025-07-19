@@ -34,6 +34,9 @@ import { toast } from "sonner";
 import { normalizeError } from "@/utils/error-utils";
 import recordingService from "@/services/recording-service";
 import logger from "@/utils/logger";
+import { useTextOverlays } from "@/hooks/use-text-overlays";
+import { DraggableTextOverlay } from "./draggable-text-overlay";
+import TextOverlayItem from "./text-overlay-item";
 
 interface ClipEditorProps {
   clip: ClipMarker | null;
@@ -50,8 +53,7 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
   const [isMuted, setIsMuted] = useState(false);
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
-  const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
-  const [selectedOverlay, setSelectedOverlay] = useState<string | null>(null);
+
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
   const [exportSettings, setExportSettings] = useState<ExportSettings>({
     format: "mp4",
@@ -71,9 +73,25 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioFileRef = useRef<HTMLInputElement>(null);
 
+  const {
+    textOverlays,
+    selectedOverlay,
+    setSelectedOverlay,
+    addTextOverlay,
+    updateTextOverlay,
+    deleteTextOverlay,
+    getTimeBasedOverlays,
+    getAllVisibleOverlays,
+    containerRef,
+    startDrag,
+    handleDragMove,
+    endDrag,
+    dragStateRef,
+  } = useTextOverlays();
+
   useEffect(() => {
     const video = videoRef.current;
-    if (!video) return;
+    if (!video || !clip) return;
 
     let objectUrl: string | null = null;
 
@@ -103,22 +121,32 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
     const handlePlay = () => setIsPlaying(true);
     const handlePause = () => setIsPlaying(false);
 
-    if (clip && typeof window !== "undefined" && recordingService) {
-      logger.log("Requesting clip blob for:", {
-        clipId: clip.id,
-        startTime: clip.startTime,
-        endTime: clip.endTime,
-      });
+    (async () => {
+      if (clip && typeof window !== "undefined" && recordingService) {
+        logger.log("Requesting clip blob for:", {
+          clipId: clip.id,
+          startTime: clip.startTime,
+          endTime: clip.endTime,
+        });
 
-      const blob = recordingService.getClipBlob(clip.startTime, clip.endTime);
-      if (blob && blob.size > 0) {
-        objectUrl = URL.createObjectURL(blob);
-        video.src = objectUrl;
-        logger.log("Set video src to blob URL:", objectUrl);
-      } else {
-        logger.error("Failed to get valid clip blob:", { blob });
+        try {
+          const blob = await recordingService.getClipBlob(
+            clip.startTime,
+            clip.endTime
+          );
+
+          if (blob && blob.size > 0) {
+            objectUrl = URL.createObjectURL(blob);
+            video.src = objectUrl;
+            logger.log("Set video src to blob URL:", objectUrl);
+          } else {
+            logger.error("Failed to get valid clip blob:", { blob });
+          }
+        } catch (err) {
+          logger.error("Error loading clip blob:", err);
+        }
       }
-    }
+    })();
 
     video.addEventListener("timeupdate", handleTimeUpdate);
     video.addEventListener("loadedmetadata", handleLoadedMetadata);
@@ -137,7 +165,7 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [clip?.id]);
+  }, [clip]);
 
   const formatTime = (milliseconds: number) => {
     const seconds = Math.floor(milliseconds / 1000);
@@ -220,45 +248,6 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
 
   const handleTrimEndChange = (newEnd: number) => {
     setTrimEnd(Math.min(duration, Math.max(newEnd, trimStart + 1000)));
-  };
-
-  const addTextOverlay = () => {
-    const newOverlay: TextOverlay = {
-      id: `text_${Date.now()}`,
-      text: "New Text",
-      startTime: currentTime,
-      endTime: currentTime + 5000,
-      x: 50,
-      y: 50,
-      fontSize: 48,
-      fontFamily: "Inter",
-      letterSpacing: "-0.03em",
-      color: "#ffffff",
-      backgroundColor: "#000000",
-      opacity: 0.8,
-      bold: false,
-      italic: false,
-      underline: false,
-      alignment: "center",
-      visible: true,
-    };
-    setTextOverlays([...textOverlays, newOverlay]);
-    setSelectedOverlay(newOverlay.id);
-  };
-
-  const updateTextOverlay = (id: string, updates: Partial<TextOverlay>) => {
-    setTextOverlays(
-      textOverlays.map((overlay) =>
-        overlay.id === id ? { ...overlay, ...updates } : overlay
-      )
-    );
-  };
-
-  const deleteTextOverlay = (id: string) => {
-    setTextOverlays(textOverlays.filter((overlay) => overlay.id !== id));
-    if (selectedOverlay === id) {
-      setSelectedOverlay(null);
-    }
   };
 
   const addAudioTrack = () => {
@@ -430,235 +419,21 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold">Text Overlays</h3>
                   <button
-                    onClick={addTextOverlay}
+                    onClick={() => addTextOverlay()}
                     className="p-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                   >
                     <Plus size={18} />
                   </button>
                 </div>
-
-                {textOverlays.map((overlay) => (
-                  <div
-                    key={overlay.id}
-                    className={`p-3 rounded-lg border-2 ${
-                      selectedOverlay === overlay.id
-                        ? "border-blue-500 bg-blue-900/20"
-                        : "border-gray-600 bg-gray-700/50"
-                    }`}
-                  >
-                    <div className="flex items-center justify-between mb-2">
-                      <input
-                        type="text"
-                        value={overlay.text}
-                        onChange={(e) =>
-                          updateTextOverlay(overlay.id, {
-                            text: e.target.value,
-                          })
-                        }
-                        className="flex-1 bg-gray-800 rounded px-2 py-1 text-sm"
-                        placeholder="Text content"
-                      />
-                      <div className="flex items-center space-x-1 ml-2">
-                        <button
-                          onClick={() =>
-                            updateTextOverlay(overlay.id, {
-                              visible: !overlay.visible,
-                            })
-                          }
-                          className={`p-1 rounded ${
-                            overlay.visible ? "text-blue-400" : "text-gray-500"
-                          }`}
-                        >
-                          {overlay.visible ? (
-                            <Eye size={16} />
-                          ) : (
-                            <EyeOff size={16} />
-                          )}
-                        </button>
-                        <button
-                          onClick={() => deleteTextOverlay(overlay.id)}
-                          className="p-1 text-red-400 hover:text-red-300"
-                        >
-                          <Trash2 size={16} />
-                        </button>
-                      </div>
-                    </div>
-
-                    {selectedOverlay === overlay.id && (
-                      <div className="space-y-3 mt-3 pt-3 border-t border-gray-600">
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">
-                              Font Size
-                            </label>
-                            <input
-                              type="range"
-                              min="12"
-                              max="120"
-                              value={overlay.fontSize}
-                              onChange={(e) =>
-                                updateTextOverlay(overlay.id, {
-                                  fontSize: parseInt(e.target.value),
-                                })
-                              }
-                              className="w-full"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">
-                              Opacity
-                            </label>
-                            <input
-                              type="range"
-                              min="0"
-                              max="1"
-                              step="0.1"
-                              value={overlay.opacity}
-                              onChange={(e) =>
-                                updateTextOverlay(overlay.id, {
-                                  opacity: parseFloat(e.target.value),
-                                })
-                              }
-                              className="w-full"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          <button
-                            onClick={() =>
-                              updateTextOverlay(overlay.id, {
-                                bold: !overlay.bold,
-                              })
-                            }
-                            className={`p-2 rounded ${
-                              overlay.bold ? "bg-blue-600" : "bg-gray-700"
-                            }`}
-                          >
-                            <Bold size={16} />
-                          </button>
-                          <button
-                            onClick={() =>
-                              updateTextOverlay(overlay.id, {
-                                italic: !overlay.italic,
-                              })
-                            }
-                            className={`p-2 rounded ${
-                              overlay.italic ? "bg-blue-600" : "bg-gray-700"
-                            }`}
-                          >
-                            <Italic size={16} />
-                          </button>
-                          <button
-                            onClick={() =>
-                              updateTextOverlay(overlay.id, {
-                                underline: !overlay.underline,
-                              })
-                            }
-                            className={`p-2 rounded ${
-                              overlay.underline ? "bg-blue-600" : "bg-gray-700"
-                            }`}
-                          >
-                            <Underline size={16} />
-                          </button>
-                        </div>
-
-                        <div className="flex items-center space-x-2">
-                          {[
-                            { value: "left", icon: AlignLeft },
-                            { value: "center", icon: AlignCenter },
-                            { value: "right", icon: AlignRight },
-                          ].map(({ value, icon: Icon }) => (
-                            <button
-                              key={value}
-                              onClick={() =>
-                                updateTextOverlay(overlay.id, {
-                                  alignment: value as TextOverlay["alignment"],
-                                })
-                              }
-                              className={`p-2 rounded ${
-                                overlay.alignment === value
-                                  ? "bg-blue-600"
-                                  : "bg-gray-700"
-                              }`}
-                            >
-                              <Icon size={16} />
-                            </button>
-                          ))}
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">
-                              Text Color
-                            </label>
-                            <input
-                              type="color"
-                              value={overlay.color}
-                              onChange={(e) =>
-                                updateTextOverlay(overlay.id, {
-                                  color: e.target.value,
-                                })
-                              }
-                              className="w-full h-8 rounded"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">
-                              Background
-                            </label>
-                            <input
-                              type="color"
-                              value={overlay.backgroundColor}
-                              onChange={(e) =>
-                                updateTextOverlay(overlay.id, {
-                                  backgroundColor: e.target.value,
-                                })
-                              }
-                              className="w-full h-8 rounded"
-                            />
-                          </div>
-                        </div>
-
-                        <div className="grid grid-cols-2 gap-2">
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">
-                              Start Time
-                            </label>
-                            <input
-                              type="number"
-                              min="0"
-                              max={duration}
-                              value={Math.floor(overlay.startTime / 1000)}
-                              onChange={(e) =>
-                                updateTextOverlay(overlay.id, {
-                                  startTime: parseInt(e.target.value) * 1000,
-                                })
-                              }
-                              className="w-full bg-gray-800 rounded px-2 py-1 text-sm"
-                            />
-                          </div>
-                          <div>
-                            <label className="block text-xs text-gray-400 mb-1">
-                              End Time
-                            </label>
-                            <input
-                              type="number"
-                              min="0"
-                              max={duration}
-                              value={Math.floor(overlay.endTime / 1000)}
-                              onChange={(e) =>
-                                updateTextOverlay(overlay.id, {
-                                  endTime: parseInt(e.target.value) * 1000,
-                                })
-                              }
-                              className="w-full bg-gray-800 rounded px-2 py-1 text-sm"
-                            />
-                          </div>
-                        </div>
-                      </div>
-                    )}
-                  </div>
+                {textOverlays.map((textOverlay) => (
+                  <TextOverlayItem
+                    overlay={textOverlay}
+                    selectedOverlay={selectedOverlay}
+                    duration={duration}
+                    currentTime={currentTime}
+                    updateTextOverlay={updateTextOverlay}
+                    deleteTextOverlay={deleteTextOverlay}
+                  />
                 ))}
               </div>
             )}
@@ -920,38 +695,48 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
                 height={videoRef.current?.videoHeight || 1080}
               />
 
-              {textOverlays
-                .filter(
-                  (overlay) =>
-                    overlay.visible &&
-                    currentTime >= overlay.startTime &&
-                    currentTime <= overlay.endTime
-                )
-                .map((overlay) => (
-                  <div
+              <div ref={containerRef} className="video-container">
+                {getTimeBasedOverlays(currentTime).map((overlay) => (
+                  <DraggableTextOverlay
                     key={overlay.id}
-                    className="absolute pointer-events-none"
-                    style={{
-                      left: `${overlay.x}%`,
-                      top: `${overlay.y}%`,
-                      fontSize: `${overlay.fontSize}px`,
-                      fontFamily: overlay.fontFamily,
-                      letterSpacing: overlay.letterSpacing,
-                      color: overlay.color,
-                      backgroundColor: overlay.backgroundColor,
-                      opacity: overlay.opacity,
-                      fontWeight: overlay.bold ? "bold" : "normal",
-                      fontStyle: overlay.italic ? "italic" : "normal",
-                      textDecoration: overlay.underline ? "underline" : "none",
-                      textAlign: overlay.alignment,
-                      padding: "8px 12px",
-                      borderRadius: "4px",
-                      transform: "translate(-50%, -50%)",
+                    overlay={overlay}
+                    isSelected={selectedOverlay === overlay.id}
+                    onMouseDown={(e) => {
+                      e.preventDefault();
+                      e.stopPropagation();
+                      startDrag(overlay.id, e);
                     }}
-                  >
-                    {overlay.text}
-                  </div>
+                    onDragMove={handleDragMove}
+                    onDragEnd={endDrag}
+                    isDragging={
+                      dragStateRef.current.currentOverlayId === overlay.id
+                    }
+                  />
                 ))}
+
+                {getAllVisibleOverlays()
+                  .filter(
+                    (overlay) =>
+                      overlay.startTime === 0 && overlay.endTime >= duration
+                  )
+                  .map((overlay) => (
+                    <DraggableTextOverlay
+                      key={`persistent-${overlay.id}`}
+                      overlay={overlay}
+                      isSelected={selectedOverlay === overlay.id}
+                      onMouseDown={(e) => {
+                        e.preventDefault();
+                        e.stopPropagation();
+                        startDrag(overlay.id, e);
+                      }}
+                      onDragMove={handleDragMove}
+                      onDragEnd={endDrag}
+                      isDragging={
+                        dragStateRef.current.currentOverlayId === overlay.id
+                      }
+                    />
+                  ))}
+              </div>
             </div>
           )}
 

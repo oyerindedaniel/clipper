@@ -19,6 +19,11 @@ export interface ElectronAPI {
   ) => Promise<{ success: boolean }>;
   stopRecording: () => Promise<{ success: boolean }>;
   getClipMarkers: () => Promise<ClipMarker[]>;
+  remuxClip: (
+    chunks: ArrayBuffer[],
+    clipStartMs: number,
+    clipEndMs: number
+  ) => Promise<ArrayBuffer>;
   exportClip: (
     clipData: ClipExportData
   ) => Promise<{ success: boolean; outputPath: string }>;
