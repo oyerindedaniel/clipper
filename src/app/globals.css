@@ -3,27 +3,27 @@
 @plugin "tailwindcss-animate";
 
 :root {
-  --surface-primary: oklch(0.98 0 0);
-  --surface-secondary: oklch(0.95 0 0);
-  --surface-tertiary: oklch(0.9 0 0);
-  --surface-hover: oklch(0.87 0 0);
+  --surface-primary: oklch(0.18 0 0);
+  --surface-secondary: oklch(0.24 0 0);
+  --surface-tertiary: oklch(0.3 0 0);
+  --surface-hover: oklch(0.35 0 0);
 
-  --foreground-default: oklch(0.2 0 0);
-  --foreground-subtle: oklch(0.4 0 0);
-  --foreground-muted: oklch(0.6 0 0);
+  --foreground-default: oklch(0.92 0 0);
+  --foreground-subtle: oklch(0.65 0 0);
+  --foreground-muted: oklch(0.5 0 0);
   --foreground-on-accent: oklch(1 0 0);
 
-  --border-default: oklch(0.85 0 0);
-  --border-subtle: oklch(0.92 0 0);
+  --border-default: oklch(0.35 0 0);
+  --border-subtle: oklch(0.28 0 0);
 
   --accent-primary: oklch(0.65 0.15 260);
-  --accent-primary-hover: oklch(0.6 0.15 260);
-  --accent-primary-active: oklch(0.55 0.15 260);
+  --accent-primary-hover: oklch(0.7 0.15 260);
+  --accent-primary-active: oklch(0.75 0.15 260);
 
-  --alert-success: oklch(0.7 0.2 145);
-  --alert-warning: oklch(0.85 0.25 80);
-  --alert-error: oklch(0.6 0.25 25);
-  --alert-info: oklch(0.65 0.15 220);
+  --alert-success: oklch(0.6 0.2 145);
+  --alert-warning: oklch(0.7 0.25 80);
+  --alert-error: oklch(0.5 0.25 25);
+  --alert-info: oklch(0.6 0.15 220);
 
   --shadow-color: oklch(0 0 0 / 0.1);
 }

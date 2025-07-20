@@ -30,7 +30,7 @@ import logger from "@/utils/logger";
 import { useTextOverlays } from "@/hooks/use-text-overlays";
 import { DraggableTextOverlay } from "./draggable-text-overlay";
 import TextOverlayItem from "./text-overlay-item";
-import { useParams } from "next/navigation";
+import { redirect, RedirectType } from "next/navigation";
 
 interface ClipEditorProps {
   clip: ClipMarker | null;
@@ -67,6 +67,10 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioFileRef = useRef<HTMLInputElement>(null);
 
+  if (!clip) {
+    redirect("/", RedirectType.replace);
+  }
+
   const {
     textOverlays,
     selectedOverlay,
@@ -98,6 +102,11 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
       if (clip) {
         setTrimStart(0);
         setTrimEnd(video.duration * 1000);
+      }
+
+      if (canvasRef.current) {
+        canvasRef.current.width = video.videoWidth;
+        canvasRef.current.height = video.videoHeight;
       }
 
       logger.log("📹 Video metadata loaded:", {
@@ -706,8 +715,6 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
               <canvas
                 ref={canvasRef}
                 className="absolute inset-0 pointer-events-none"
-                width={videoRef.current?.videoWidth || 1920}
-                height={videoRef.current?.videoHeight || 1080}
               />
 
               <div ref={containerRef} className="video-container">

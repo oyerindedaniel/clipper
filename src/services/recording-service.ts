@@ -348,7 +348,7 @@ class RecordingService {
     }
 
     const aspectPart = convertAspectRatio
-      ? `${convertAspectRatio}_${cropMode || "letterbox"}`
+      ? `${convertAspectRatio}_${cropMode}`
       : "original";
 
     const cacheKey = `${startTime}-${endTime}-${aspectPart}`;
