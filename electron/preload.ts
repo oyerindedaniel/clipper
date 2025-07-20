@@ -24,9 +24,13 @@ contextBridge.exposeInMainWorld("electronAPI", {
   remuxClip: (
     chunks: ArrayBuffer[],
     clipStartMs: number,
-    clipEndMs: number
+    clipEndMs: number,
+    options: {
+      convertAspectRatio?: string;
+      cropMode?: "letterbox" | "crop" | "stretch";
+    }
   ): Promise<ArrayBuffer> =>
-    ipcRenderer.invoke("remux-clip", chunks, clipStartMs, clipEndMs),
+    ipcRenderer.invoke("remux-clip", chunks, clipStartMs, clipEndMs, options),
   getClipMarkers: (): Promise<ClipMarker[]> =>
     ipcRenderer.invoke("get-clip-markers"),
 

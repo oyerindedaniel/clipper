@@ -8,7 +8,9 @@ import {
   IpcMainEvent,
 } from "electron";
 import ffmpegStatic from "ffmpeg-static";
+import ffprobeStatic from "ffprobe-static";
 import { spawn, ChildProcessWithoutNullStreams } from "child_process";
+import pQueue from "p-queue";
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
@@ -31,7 +33,7 @@ let recordingProcess: ChildProcessWithoutNullStreams | null = null;
 let clipMarkers: ClipMarker[] = [];
 let currentStream: StreamSession | null = null;
 
-const bufferDir = path.join(os.homedir(), "twitch-recorder-buffer");
+const bufferDir = path.join(os.tmpdir(), "twitch-recorder-buffer");
 const captureManager = DesktopCaptureManager.getInstance();
 
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
@@ -367,36 +369,40 @@ async function processClipWithFFmpeg(
   }
 }
 
-async function remuxClipWithFFmpeg(
+/**
+ * Remux a set of video chunks into a trimmed WebM and optionally convert aspect ratio
+ */
+export async function remuxClipWithFFmpeg(
   chunks: ArrayBuffer[],
   clipStartMs: number,
-  clipEndMs: number
+  clipEndMs: number,
+  options?: {
+    convertAspectRatio?: string; // e.g. "9:16", "16:9", etc.
+    cropMode?: "letterbox" | "crop" | "stretch";
+  }
 ): Promise<ArrayBuffer> {
-  try {
-    const tempInput = path.join(bufferDir, `temp_remux_${Date.now()}.webm`);
-    const tempOutput = path.join(
-      bufferDir,
-      `temp_remux_out_${Date.now()}.webm`
-    );
+  const sessionId = Date.now();
+  const tempInput = path.join(bufferDir, `temp_remux_${sessionId}.webm`);
+  const tempOutput = path.join(bufferDir, `temp_remux_out_${sessionId}.webm`);
 
-    // 🧱 Combine all chunks into one WebM file
+  logger.log("🔧 Starting remux operation", {
+    clipStartMs,
+    clipEndMs,
+    cropMode: options?.cropMode,
+    convertAspectRatio: options?.convertAspectRatio,
+  });
+
+  try {
+    const ffmpegPath = ffmpegStatic;
+    if (!ffmpegPath) throw new Error("FFmpeg binary not found");
+
     const combinedBuffer = Buffer.concat(
       chunks.map((chunk) => Buffer.from(chunk))
     );
     fs.writeFileSync(tempInput, combinedBuffer);
 
-    const ffmpegPath = ffmpegStatic;
-
-    logger.log({ ffmpegPath });
-
-    if (!ffmpegPath) {
-      throw new Error("FFmpeg binary not found");
-    }
-
     const startSec = (clipStartMs / 1000).toFixed(3);
     const durationSec = ((clipEndMs - clipStartMs) / 1000).toFixed(3);
-
-    logger.log({ startSec, durationSec });
 
     const args = [
       "-ss",
@@ -413,65 +419,253 @@ async function remuxClipWithFFmpeg(
       tempOutput,
     ];
 
-    logger.log("[FFMPEG ARGS]", args);
+    logger.log("📦 FFmpeg remux args:", args);
 
-    return await new Promise((resolve, reject) => {
+    await new Promise<void>((resolve, reject) => {
       const ff = spawn(ffmpegPath, args);
 
-      // ✅ Capture FFmpeg output
-      ff.stdout.on("data", (data) => {
-        logger.log("[FFMPEG STDOUT]:", data.toString());
-      });
-
-      ff.stderr.on("data", (data) => {
-        logger.error("[FFMPEG STDERR]:", data.toString());
-      });
-
-      ff.on("error", (err) => {
-        logger.error("FFmpeg spawn failed:", err);
-        reject(new Error(`Failed to spawn FFmpeg: ${err.message}`));
-      });
+      ff.stderr.on("data", (data) => logger.error(`[FFMPEG STDERR]: ${data}`));
+      ff.stdout.on("data", (data) => logger.log(`[FFMPEG STDOUT]: ${data}`));
 
       ff.on("close", (code) => {
-        try {
-          if (fs.existsSync(tempInput)) {
-            const stat = fs.statSync(tempInput);
-            logger.log(`[TEMP INPUT]: ${tempInput} (${stat.size} bytes)`);
-            fs.unlinkSync(tempInput);
-          }
-        } catch (e) {
-          logger.warn("Could not delete temp input file:", e);
-        }
+        if (code === 0) resolve();
+        else reject(new Error(`FFmpeg exited with code ${code}`));
+      });
 
+      ff.on("error", (err) => reject(err));
+    });
+
+    // Ensure the output file exists before proceeding
+    if (!fs.existsSync(tempOutput)) {
+      throw new Error("FFmpeg failed to create output file");
+    }
+
+    // Read the remuxed output
+    let finalBuffer = fs.readFileSync(tempOutput);
+
+    // 🖼️ Optional: Convert to target aspect ratio
+    if (options?.convertAspectRatio) {
+      logger.log("📐 Converting aspect ratio", {
+        to: options.convertAspectRatio,
+        mode: options.cropMode,
+      });
+
+      // Convert the buffer to ArrayBuffer for the aspect ratio conversion
+      const bufferArrayBuffer = finalBuffer.buffer.slice(
+        finalBuffer.byteOffset,
+        finalBuffer.byteOffset + finalBuffer.byteLength
+      );
+
+      const converted = await convertVideoAspectRatio(
+        bufferArrayBuffer,
+        options.convertAspectRatio,
+        options.cropMode || "letterbox"
+      );
+
+      return converted;
+    }
+
+    return finalBuffer.buffer.slice(
+      finalBuffer.byteOffset,
+      finalBuffer.byteOffset + finalBuffer.byteLength
+    );
+  } catch (error) {
+    logger.error("❌ Remux failed:", error);
+    throw error;
+  } finally {
+    // Clean up temp files
+    try {
+      if (fs.existsSync(tempInput)) fs.unlinkSync(tempInput);
+      if (fs.existsSync(tempOutput)) fs.unlinkSync(tempOutput);
+    } catch (cleanupError) {
+      logger.warn("Failed to cleanup temp files:", cleanupError);
+    }
+  }
+}
+
+/**
+ * Get video width and height from input file using FFprobe
+ */
+function getVideoDimensions(
+  inputPath: string
+): Promise<{ width: number; height: number }> {
+  const ffprobePath = ffprobeStatic.path;
+
+  if (!ffprobePath) {
+    throw new Error("FFprobe binary not found");
+  }
+
+  return new Promise((resolve, reject) => {
+    const ffprobe = spawn(ffprobePath, [
+      "-v",
+      "error",
+      "-select_streams",
+      "v:0",
+      "-show_entries",
+      "stream=width,height",
+      "-of",
+      "json",
+      inputPath,
+    ]);
+
+    let output = "";
+
+    ffprobe.stdout.on("data", (data) => {
+      output += data.toString();
+    });
+
+    ffprobe.stderr.on("data", (err) => {
+      logger.warn("ffprobe stderr:", err.toString());
+    });
+
+    ffprobe.on("close", () => {
+      try {
+        const info = JSON.parse(output);
+        const { width, height } = info.streams[0];
+        resolve({ width, height });
+      } catch (err) {
+        reject(new Error("Failed to parse ffprobe output"));
+      }
+    });
+
+    ffprobe.on("error", (err) => {
+      reject(err);
+    });
+  });
+}
+
+const conversionQueue = new pQueue({ concurrency: 1 });
+
+/**
+ * Convert video to different aspect ratio using FFmpeg
+ */
+async function convertVideoAspectRatio(
+  inputBuffer: ArrayBuffer,
+  targetAspectRatio: string,
+  cropMode: "letterbox" | "crop" | "stretch" = "letterbox"
+): Promise<ArrayBuffer> {
+  const isValidAspect = /^\d+:\d+$/.test(targetAspectRatio);
+  if (!isValidAspect) {
+    logger.warn(
+      "⚠️ Invalid or missing aspect ratio string. Skipping conversion."
+    );
+    return inputBuffer;
+  }
+
+  const tempInput = path.join(bufferDir, `temp_aspect_${Date.now()}.webm`);
+  const tempOutput = path.join(bufferDir, `temp_aspect_out_${Date.now()}.webm`);
+
+  try {
+    const buffer = Buffer.from(inputBuffer);
+    logger.log(`Input buffer size: ${buffer.length} bytes`);
+
+    fs.writeFileSync(tempInput, buffer);
+
+    if (!fs.existsSync(tempInput)) {
+      logger.error(`File not created: ${tempInput}`);
+      throw new Error(`Input file not found after writing: ${tempInput}`);
+    }
+
+    logger.log(
+      `File written: ${tempInput}, size: ${fs.statSync(tempInput).size} bytes`
+    );
+
+    const ffmpegPath = ffmpegStatic;
+    if (!ffmpegPath) throw new Error("FFmpeg binary not found");
+
+    const { width: inputW, height: inputH } = await getVideoDimensions(
+      tempInput
+    );
+    logger.log("📏 Input video dimensions:", { width: inputW, height: inputH });
+
+    const [targetW, targetH] = targetAspectRatio.split(":").map(Number);
+    const targetRatio = targetW / targetH;
+
+    let filterArgs: string[] = [];
+    switch (cropMode) {
+      case "letterbox": {
+        const padW = Math.round(inputH * targetRatio);
+        const padH = inputH;
+        const scaleExpr = `scale='if(gt(a,${targetRatio}),${padW},-1)':'if(gt(a,${targetRatio}),-1,${padH})'`;
+        const padExpr = `pad=${padW}:${padH}:(ow-iw)/2:(oh-ih)/2:color=white`;
+        filterArgs = ["-vf", `${scaleExpr},${padExpr}`];
+        break;
+      }
+      case "crop": {
+        const cropW = Math.round(inputH * targetRatio);
+        const cropH = inputH;
+        const scaleExpr = `scale=-1:${cropH}`;
+        const cropExpr = `crop=${cropW}:${cropH}`;
+        filterArgs = ["-vf", `${scaleExpr},${cropExpr}`];
+        break;
+      }
+      case "stretch": {
+        const stretchW = Math.round(inputH * targetRatio);
+        const stretchH = inputH;
+        filterArgs = ["-vf", `scale=${stretchW}:${stretchH}`];
+        break;
+      }
+    }
+
+    // const args = [
+    //   "-i",
+    //   tempInput,
+    //   ...filterArgs,
+    //   "-c:a",
+    //   "copy",
+    //   "-y",
+    //   tempOutput,
+    // ];
+
+    const args = [
+      "-i",
+      tempInput,
+      ...filterArgs,
+      "-c:v",
+      "libvpx-vp9",
+      "-cpu-used",
+      "4",
+      "-c:a",
+      "copy",
+      "-y",
+      tempOutput,
+    ];
+
+    logger.log("FFmpeg args:", args);
+
+    return new Promise((resolve, reject) => {
+      const ff = spawn(ffmpegPath, args);
+      ff.stderr.on("data", (data) =>
+        logger.log("[FFMPEG ASPECT]:", data.toString())
+      );
+      ff.on("close", (code) => {
         if (code === 0) {
           try {
-            if (!fs.existsSync(tempOutput)) {
-              return reject(
-                new Error("Output file not found after FFmpeg run")
-              );
-            }
-
             const outputBuffer = fs.readFileSync(tempOutput);
             fs.unlinkSync(tempOutput);
-
-            const result = outputBuffer.buffer.slice(
-              outputBuffer.byteOffset,
-              outputBuffer.byteOffset + outputBuffer.byteLength
+            resolve(
+              outputBuffer.buffer.slice(
+                outputBuffer.byteOffset,
+                outputBuffer.byteOffset + outputBuffer.byteLength
+              )
             );
-
-            resolve(result);
           } catch (err) {
-            logger.error("Failed to read output file:", err);
             reject(new Error("Failed to read output file"));
           }
         } else {
+          logger.error(
+            `FFmpeg failed with code ${code}, leaving temp files: ${tempInput}, ${tempOutput}`
+          );
           reject(new Error(`FFmpeg exited with code ${code}`));
         }
       });
+      ff.on("error", (err) => reject(err));
     });
   } catch (error) {
-    logger.error("Remux failed:", error);
+    logger.error("Aspect ratio conversion failed:", error);
     throw error;
+  } finally {
+    // Only clean up if successful; retain files on failure
   }
 }
 
@@ -544,9 +738,13 @@ function setupIpc(): void {
       _: IpcMainInvokeEvent,
       chunks: ArrayBuffer[],
       clipStartMs: number,
-      clipEndMs: number
+      clipEndMs: number,
+      options: {
+        convertAspectRatio?: string;
+        cropMode?: "letterbox" | "crop" | "stretch";
+      }
     ) => {
-      return remuxClipWithFFmpeg(chunks, clipStartMs, clipEndMs);
+      return remuxClipWithFFmpeg(chunks, clipStartMs, clipEndMs, options);
     }
   );
 }

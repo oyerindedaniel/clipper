@@ -1,4 +1,4 @@
-import React, { useState, useRef, useEffect, useCallback } from "react";
+import React, { useState, useRef, useEffect } from "react";
 import {
   Play,
   Pause,
@@ -15,16 +15,9 @@ import {
   EyeOff,
   Plus,
   Trash2,
-  AlignLeft,
-  AlignCenter,
-  AlignRight,
-  Bold,
-  Italic,
-  Underline,
 } from "lucide-react";
 import {
   ClipMarker,
-  TextOverlay,
   AudioTrack,
   ExportSettings,
   ExportProgressInfo,
@@ -37,6 +30,7 @@ import logger from "@/utils/logger";
 import { useTextOverlays } from "@/hooks/use-text-overlays";
 import { DraggableTextOverlay } from "./draggable-text-overlay";
 import TextOverlayItem from "./text-overlay-item";
+import { useParams } from "next/navigation";
 
 interface ClipEditorProps {
   clip: ClipMarker | null;
@@ -105,6 +99,18 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
         setTrimStart(0);
         setTrimEnd(video.duration * 1000);
       }
+
+      logger.log("📹 Video metadata loaded:", {
+        durationMs: video.duration * 1000,
+        videoWidth: video.videoWidth,
+        videoHeight: video.videoHeight,
+        videoSrc: video.currentSrc,
+      });
+
+      logger.log("🧱 Rendered video element dimensions:", {
+        clientWidth: video.clientWidth,
+        clientHeight: video.clientHeight,
+      });
     };
 
     const handleError = (e: Event) => {
@@ -132,7 +138,8 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
         try {
           const blob = await recordingService.getClipBlob(
             clip.startTime,
-            clip.endTime
+            clip.endTime,
+            { convertAspectRatio: "9:16", cropMode: "letterbox" }
           );
 
           if (blob && blob.size > 0) {
@@ -155,6 +162,8 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
     video.addEventListener("error", handleError);
 
     return () => {
+      logger.log("Cleaning up effect");
+
       video.removeEventListener("timeupdate", handleTimeUpdate);
       video.removeEventListener("loadedmetadata", handleLoadedMetadata);
       video.removeEventListener("play", handlePlay);
@@ -165,7 +174,7 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
         URL.revokeObjectURL(objectUrl);
       }
     };
-  }, [clip]);
+  }, [clip?.id]);
 
   const formatTime = (milliseconds: number) => {
     const seconds = Math.floor(milliseconds / 1000);
@@ -427,6 +436,7 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
                 </div>
                 {textOverlays.map((textOverlay) => (
                   <TextOverlayItem
+                    key={textOverlay.id}
                     overlay={textOverlay}
                     selectedOverlay={selectedOverlay}
                     duration={duration}
@@ -686,7 +696,12 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
         <div className="flex-1 flex flex-col">
           {showPreview && clip && (
             <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
-              <video ref={videoRef} className="max-w-full max-h-full" />
+              <video
+                ref={videoRef}
+                // autoPlay
+                // muted
+                className="w-full aspect-video"
+              />
 
               <canvas
                 ref={canvasRef}

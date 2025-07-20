@@ -22,7 +22,11 @@ export interface ElectronAPI {
   remuxClip: (
     chunks: ArrayBuffer[],
     clipStartMs: number,
-    clipEndMs: number
+    clipEndMs: number,
+    options: {
+      convertAspectRatio?: string;
+      cropMode?: "letterbox" | "crop" | "stretch";
+    }
   ) => Promise<ArrayBuffer>;
   exportClip: (
     clipData: ClipExportData

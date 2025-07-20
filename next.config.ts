@@ -1,12 +1,12 @@
 /** @type {import('next').NextConfig} */
 const nextConfig = {
   output: "export",
+  reactStrictMode: false,
   trailingSlash: true,
   distDir: "out",
   images: {
     unoptimized: true,
   },
-  // Ensure no server-side features are used
   eslint: {
     ignoreDuringBuilds: false,
   },

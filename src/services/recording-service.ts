@@ -14,6 +14,8 @@ class RecordingService {
   private stream: MediaStream | null = null;
   private startTime: number | null = null;
   private bufferInterval: NodeJS.Timeout | null = null;
+  private clipCache: Map<string, { blob: Blob; cachedAt: number }> = new Map();
+  private readonly clipCacheExpiry = 10 * 60 * 1000;
 
   /**
    * Starts recording a screen and system audio stream.
@@ -184,7 +186,7 @@ class RecordingService {
       this.isRecording = true;
 
       logger.log("🧹 Starting buffer management...");
-      this.startBufferManagement();
+      // this.startBufferManagement();
 
       logger.log("✅ Recording started successfully!");
       return { success: true };
@@ -312,6 +314,7 @@ class RecordingService {
   public reset(): void {
     this.cleanupStream();
 
+    this.clipCache.clear();
     this.recordedChunks = [];
     this.isRecording = false;
     this.startTime = null;
@@ -320,21 +323,40 @@ class RecordingService {
   }
 
   /**
-   * Creates a trimmed WebM clip from recorded chunks.
+   * Creates a trimmed WebM clip from recorded chunks with caching and optional aspect ratio
    */
   public async getClipBlob(
     startTime: number,
-    endTime: number
+    endTime: number,
+    options: {
+      convertAspectRatio?: string;
+      cropMode?: "letterbox" | "crop" | "stretch";
+    } = {}
   ): Promise<Blob | null> {
-    logger.log("🎞️ Clip blob creation:", {
+    const { convertAspectRatio = "", cropMode = "letterbox" } = options;
+
+    logger.log("🎞️ Clip blob request received", {
       requestedRange: { startTime, endTime },
       totalChunks: this.recordedChunks.length,
       bufferDuration: this.getBufferDuration(),
+      options,
     });
 
     if (this.recordedChunks.length === 0) {
-      logger.warn("⚠️ No chunks available for clip");
+      logger.warn("⚠️ No recorded chunks available");
       return null;
+    }
+
+    const aspectPart = convertAspectRatio
+      ? `${convertAspectRatio}_${cropMode || "letterbox"}`
+      : "original";
+
+    const cacheKey = `${startTime}-${endTime}-${aspectPart}`;
+    const cached = this.clipCache.get(cacheKey);
+
+    if (cached && Date.now() - cached.cachedAt < this.clipCacheExpiry) {
+      logger.log("📦 Using cached clip", { cacheKey });
+      return cached.blob;
     }
 
     try {
@@ -342,18 +364,47 @@ class RecordingService {
         this.recordedChunks.map((chunk) => chunk.data.arrayBuffer())
       );
 
+      logger.log("📥 Chunks assembled into ArrayBuffers");
+
       const remuxedBuffer = await window.electronAPI.remuxClip(
         chunkArrayBuffers,
         startTime,
-        endTime
+        endTime,
+        { convertAspectRatio, cropMode }
       );
 
       const finalBlob = new Blob([remuxedBuffer], { type: "video/webm" });
-      logger.log("✅ Remuxing successful, returning final clip blob");
+
+      this.clipCache.set(cacheKey, {
+        blob: finalBlob,
+        cachedAt: Date.now(),
+      });
+
+      this.cleanClipCache();
+
+      logger.log("✅ Clip blob ready", { size: finalBlob.size, cacheKey });
+
       return finalBlob;
     } catch (error) {
-      logger.error("❌ Remuxing failed:", error);
+      logger.error("❌ Clip blob generation failed:", error);
       return null;
+    }
+  }
+
+  private cleanClipCache(): void {
+    const now = Date.now();
+    const expiredKeys: string[] = [];
+
+    this.clipCache.forEach((value, key) => {
+      if (now - value.cachedAt > this.clipCacheExpiry) {
+        expiredKeys.push(key);
+      }
+    });
+
+    expiredKeys.forEach((key) => this.clipCache.delete(key));
+
+    if (expiredKeys.length > 0) {
+      logger.log(`🗑️ Cleaned ${expiredKeys.length} expired clip cache entries`);
     }
   }
 
