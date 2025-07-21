@@ -13,10 +13,10 @@ export interface ClipMarker {
 export interface TextOverlay {
   id: string;
   text: string;
-  startTime: number;
-  endTime: number;
   x: number;
   y: number;
+  startTime: number;
+  endTime: number;
   fontSize: number;
   fontFamily: string;
   letterSpacing: string;
@@ -26,7 +26,7 @@ export interface TextOverlay {
   bold: boolean;
   italic: boolean;
   underline: boolean;
-  alignment: "left" | "center" | "right";
+  // alignment: "left" | "center" | "right";
   visible: boolean;
 }
 
@@ -57,6 +57,9 @@ export interface ClipExportData {
   endTime: number;
   outputName: string;
   outputPath: string;
+  textOverlays?: TextOverlay[];
+  audioTracks?: AudioTrack[];
+  exportSettings: ExportSettings;
 }
 
 /**

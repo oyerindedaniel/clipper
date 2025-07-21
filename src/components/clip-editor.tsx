@@ -31,6 +31,8 @@ import { useTextOverlays } from "@/hooks/use-text-overlays";
 import { DraggableTextOverlay } from "./draggable-text-overlay";
 import TextOverlayItem from "./text-overlay-item";
 import { redirect, RedirectType } from "next/navigation";
+import { getVideoBoundingBox } from "@/utils/app";
+import * as MediaPlayer from "@/components/ui/media-player";
 
 interface ClipEditorProps {
   clip: ClipMarker | null;
@@ -40,11 +42,8 @@ interface ClipEditorProps {
 type ClipToolType = "clips" | "text" | "audio" | "export";
 
 const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
-  const [isPlaying, setIsPlaying] = useState(false);
   const [currentTime, setCurrentTime] = useState(0);
   const [duration, setDuration] = useState(0);
-  const [volume, setVolume] = useState(1);
-  const [isMuted, setIsMuted] = useState(false);
   const [trimStart, setTrimStart] = useState(0);
   const [trimEnd, setTrimEnd] = useState(0);
 
@@ -59,13 +58,15 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
   const [isExporting, setIsExporting] = useState(false);
   const [exportProgress, setExportProgress] = useState(0);
   const [activeTab, setActiveTab] = useState<ClipToolType>("clips");
-  const [showPreview, setShowPreview] = useState(true);
   const [zoomLevel, setZoomLevel] = useState(1);
 
+  const [isVideoLoaded, setIsVideoLoaded] = useState(false);
+
   const videoRef = useRef<HTMLVideoElement>(null);
-  const timelineRef = useRef<HTMLDivElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioFileRef = useRef<HTMLInputElement>(null);
+
+  const traceRef = useRef<HTMLDivElement>(null);
 
   if (!clip) {
     redirect("/", RedirectType.replace);
@@ -82,9 +83,6 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
     getAllVisibleOverlays,
     containerRef,
     startDrag,
-    handleDragMove,
-    endDrag,
-    dragStateRef,
   } = useTextOverlays();
 
   useEffect(() => {
@@ -93,20 +91,27 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
 
     let objectUrl: string | null = null;
 
-    const handleTimeUpdate = () => {
-      setCurrentTime(video.currentTime * 1000);
-    };
-
     const handleLoadedMetadata = () => {
+      setIsVideoLoaded(true);
       setDuration(video.duration * 1000);
       if (clip) {
         setTrimStart(0);
         setTrimEnd(video.duration * 1000);
       }
 
-      if (canvasRef.current) {
-        canvasRef.current.width = video.videoWidth;
-        canvasRef.current.height = video.videoHeight;
+      if (traceRef.current) {
+        const { x, y, width, height } = getVideoBoundingBox(video);
+
+        const trace = traceRef.current;
+
+        trace.style.position = "absolute";
+        trace.style.left = `${x}px`;
+        trace.style.top = `${y}px`;
+        trace.style.width = `${width}px`;
+        trace.style.height = `${height}px`;
+        trace.style.backgroundColor = "rgba(255, 0, 0, 0.3)";
+        trace.style.pointerEvents = "none";
+        trace.style.zIndex = "999";
       }
 
       logger.log("📹 Video metadata loaded:", {
@@ -123,6 +128,7 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
     };
 
     const handleError = (e: Event) => {
+      setIsVideoLoaded(false);
       logger.error("Video load error:", e);
       const videoElement = e.target as HTMLVideoElement;
       logger.error("Video error details:", {
@@ -132,9 +138,6 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
         currentSrc: videoElement.currentSrc,
       });
     };
-
-    const handlePlay = () => setIsPlaying(true);
-    const handlePause = () => setIsPlaying(false);
 
     (async () => {
       if (clip && typeof window !== "undefined" && recordingService) {
@@ -164,19 +167,13 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
       }
     })();
 
-    video.addEventListener("timeupdate", handleTimeUpdate);
     video.addEventListener("loadedmetadata", handleLoadedMetadata);
-    video.addEventListener("play", handlePlay);
-    video.addEventListener("pause", handlePause);
     video.addEventListener("error", handleError);
 
     return () => {
       logger.log("Cleaning up effect");
 
-      video.removeEventListener("timeupdate", handleTimeUpdate);
       video.removeEventListener("loadedmetadata", handleLoadedMetadata);
-      video.removeEventListener("play", handlePlay);
-      video.removeEventListener("pause", handlePause);
       video.removeEventListener("error", handleError);
 
       if (objectUrl) {
@@ -198,74 +195,6 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
         .padStart(2, "0")}`;
     }
     return `${minutes}:${(seconds % 60).toString().padStart(2, "0")}`;
-  };
-
-  const togglePlayPause = () => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (isPlaying) {
-      video.pause();
-    } else {
-      video.play();
-    }
-  };
-
-  const seekTo = (time: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-    video.currentTime = time / 1000;
-  };
-
-  const skipBackward = () => {
-    seekTo(Math.max(0, currentTime - 5000));
-  };
-
-  const skipForward = () => {
-    seekTo(Math.min(duration, currentTime + 5000));
-  };
-
-  const toggleMute = () => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    if (isMuted) {
-      video.volume = volume;
-      setIsMuted(false);
-    } else {
-      video.volume = 0;
-      setIsMuted(true);
-    }
-  };
-
-  const handleVolumeChange = (newVolume: number) => {
-    const video = videoRef.current;
-    if (!video) return;
-
-    setVolume(newVolume);
-    if (!isMuted) {
-      video.volume = newVolume;
-    }
-  };
-
-  const handleTimelineClick = (e: React.MouseEvent) => {
-    const timeline = timelineRef.current;
-    if (!timeline) return;
-
-    const rect = timeline.getBoundingClientRect();
-    const clickX = e.clientX - rect.left;
-    const timelineWidth = rect.width;
-    const clickTime = (clickX / timelineWidth) * duration;
-
-    seekTo(clickTime);
-  };
-
-  const handleTrimStartChange = (newStart: number) => {
-    setTrimStart(Math.max(0, Math.min(newStart, trimEnd - 1000)));
-  };
-
-  const handleTrimEndChange = (newEnd: number) => {
-    setTrimEnd(Math.min(duration, Math.max(newEnd, trimStart + 1000)));
   };
 
   const addAudioTrack = () => {
@@ -377,12 +306,6 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
         <h1 className="text-xl font-bold">Clip Editor</h1>
         <div className="flex items-center space-x-2">
           <button
-            onClick={() => setShowPreview(!showPreview)}
-            className="p-2 bg-gray-700 rounded-lg hover:bg-gray-600 transition-colors"
-          >
-            {showPreview ? <Eye size={20} /> : <EyeOff size={20} />}
-          </button>
-          <button
             onClick={handleExport}
             disabled={!clip || isExporting}
             className="flex items-center space-x-2 px-4 py-2 bg-blue-600 rounded-lg hover:bg-blue-700 disabled:opacity-50 transition-colors"
@@ -410,6 +333,7 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
                     ? "bg-blue-600 text-white"
                     : "text-gray-400 hover:text-white hover:bg-gray-700"
                 } transition-colors`}
+                disabled={!isVideoLoaded}
               >
                 <Icon size={18} />
                 <span className="text-sm">{label}</span>
@@ -437,7 +361,7 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
                 <div className="flex items-center justify-between">
                   <h3 className="text-lg font-semibold">Text Overlays</h3>
                   <button
-                    onClick={() => addTextOverlay()}
+                    onClick={() => addTextOverlay(0, duration)}
                     className="p-2 bg-blue-600 rounded-lg hover:bg-blue-700 transition-colors"
                   >
                     <Plus size={18} />
@@ -702,25 +626,76 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
           </div>
         </div>
 
-        <div className="flex-1 flex flex-col">
-          {showPreview && clip && (
-            <div className="relative flex-1 bg-black flex items-center justify-center overflow-hidden">
-              <video
+        <div className="flex-1 flex flex-col self-start">
+          {clip && (
+            <div
+              ref={containerRef}
+              className="relative flex-1 bg-yellow-300 flex items-center justify-center overflow-hidden"
+            >
+              <div className="w-full aspect-video relative">
+                <MediaPlayer.Root>
+                  <MediaPlayer.Video
+                    ref={videoRef}
+                    playsInline
+                    className="w-full aspect-video"
+                    poster="/thumbnails/video-thumb.png"
+                  />
+                  <MediaPlayer.Loading />
+                  <MediaPlayer.Error />
+                  <MediaPlayer.VolumeIndicator />
+                  <MediaPlayer.Controls>
+                    <MediaPlayer.ControlsOverlay />
+                    <MediaPlayer.Play />
+                    <MediaPlayer.SeekBackward />
+                    <MediaPlayer.SeekForward />
+                    <MediaPlayer.Volume />
+                    <MediaPlayer.Seek />
+                    <MediaPlayer.Time />
+                    <MediaPlayer.PlaybackSpeed />
+                    <MediaPlayer.Loop />
+                    <MediaPlayer.Captions />
+                    <MediaPlayer.PiP />
+                    <MediaPlayer.Fullscreen />
+                    <MediaPlayer.Download />
+                  </MediaPlayer.Controls>
+                </MediaPlayer.Root>
+              </div>
+
+              {/* <video
                 ref={videoRef}
                 // autoPlay
                 // muted
                 className="w-full aspect-video"
-              />
+              /> */}
 
               <canvas
                 ref={canvasRef}
                 className="absolute inset-0 pointer-events-none"
               />
 
-              <div ref={containerRef} className="video-container">
-                {getTimeBasedOverlays(currentTime).map((overlay) => (
+              <div ref={traceRef} className="absolute" />
+
+              {getTimeBasedOverlays(currentTime).map((overlay) => (
+                <DraggableTextOverlay
+                  key={overlay.id}
+                  overlay={overlay}
+                  isSelected={selectedOverlay === overlay.id}
+                  onMouseDown={(e) => {
+                    e.preventDefault();
+                    e.stopPropagation();
+                    startDrag(overlay.id, e);
+                  }}
+                />
+              ))}
+
+              {getAllVisibleOverlays()
+                .filter(
+                  (overlay) =>
+                    overlay.startTime === 0 && overlay.endTime >= duration
+                )
+                .map((overlay) => (
                   <DraggableTextOverlay
-                    key={overlay.id}
+                    key={`persistent-${overlay.id}`}
                     overlay={overlay}
                     isSelected={selectedOverlay === overlay.id}
                     onMouseDown={(e) => {
@@ -728,173 +703,10 @@ const ClipEditor = ({ clip, onClipExported }: ClipEditorProps) => {
                       e.stopPropagation();
                       startDrag(overlay.id, e);
                     }}
-                    onDragMove={handleDragMove}
-                    onDragEnd={endDrag}
-                    isDragging={
-                      dragStateRef.current.currentOverlayId === overlay.id
-                    }
                   />
                 ))}
-
-                {getAllVisibleOverlays()
-                  .filter(
-                    (overlay) =>
-                      overlay.startTime === 0 && overlay.endTime >= duration
-                  )
-                  .map((overlay) => (
-                    <DraggableTextOverlay
-                      key={`persistent-${overlay.id}`}
-                      overlay={overlay}
-                      isSelected={selectedOverlay === overlay.id}
-                      onMouseDown={(e) => {
-                        e.preventDefault();
-                        e.stopPropagation();
-                        startDrag(overlay.id, e);
-                      }}
-                      onDragMove={handleDragMove}
-                      onDragEnd={endDrag}
-                      isDragging={
-                        dragStateRef.current.currentOverlayId === overlay.id
-                      }
-                    />
-                  ))}
-              </div>
             </div>
           )}
-
-          <div className="bg-gray-800 p-4 border-t border-gray-700">
-            <div className="mb-4">
-              <div
-                ref={timelineRef}
-                className="relative h-12 bg-gray-700 rounded-lg cursor-pointer overflow-hidden"
-                onClick={handleTimelineClick}
-              >
-                <div className="absolute inset-0 bg-gradient-to-r from-blue-900/30 to-purple-900/30" />
-
-                <div
-                  className="absolute top-0 bottom-0 bg-green-500/30 border-l-2 border-green-500"
-                  style={{ left: `${(trimStart / duration) * 100}%` }}
-                />
-                <div
-                  className="absolute top-0 bottom-0 bg-green-500/30 border-r-2 border-green-500"
-                  style={{ left: `${(trimEnd / duration) * 100}%` }}
-                />
-
-                <div
-                  className="absolute top-0 bottom-0 w-0.5 bg-white z-10"
-                  style={{ left: `${(currentTime / duration) * 100}%` }}
-                />
-
-                {textOverlays.map((overlay) => (
-                  <div
-                    key={overlay.id}
-                    className="absolute top-0 h-2 bg-yellow-500/70 rounded"
-                    style={{
-                      left: `${(overlay.startTime / duration) * 100}%`,
-                      width: `${
-                        ((overlay.endTime - overlay.startTime) / duration) * 100
-                      }%`,
-                    }}
-                  />
-                ))}
-
-                {audioTracks.map((track) => (
-                  <div
-                    key={track.id}
-                    className="absolute bottom-0 h-2 bg-purple-500/70 rounded"
-                    style={{
-                      left: `${(track.startTime / duration) * 100}%`,
-                      width: `${
-                        ((track.endTime - track.startTime) / duration) * 100
-                      }%`,
-                    }}
-                  />
-                ))}
-              </div>
-
-              <div className="flex justify-between text-xs text-gray-400 mt-1">
-                <span>{formatTime(0)}</span>
-                <span>{formatTime(currentTime)}</span>
-                <span>{formatTime(duration)}</span>
-              </div>
-            </div>
-
-            <div className="flex items-center justify-between">
-              <div className="flex items-center space-x-4">
-                <button
-                  onClick={skipBackward}
-                  className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
-                >
-                  <SkipBack size={20} />
-                </button>
-
-                <button
-                  onClick={togglePlayPause}
-                  className="p-3 bg-blue-600 hover:bg-blue-700 rounded-lg transition-colors"
-                >
-                  {isPlaying ? <Pause size={24} /> : <Play size={24} />}
-                </button>
-
-                <button
-                  onClick={skipForward}
-                  className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
-                >
-                  <SkipForward size={20} />
-                </button>
-              </div>
-
-              <div className="flex items-center space-x-2">
-                <button
-                  onClick={toggleMute}
-                  className="p-2 hover:bg-gray-700 rounded-lg transition-colors"
-                >
-                  {isMuted ? <VolumeX size={20} /> : <Volume2 size={20} />}
-                </button>
-
-                <input
-                  type="range"
-                  min="0"
-                  max="1"
-                  step="0.1"
-                  value={volume}
-                  onChange={(e) =>
-                    handleVolumeChange(parseFloat(e.target.value))
-                  }
-                  className="w-24"
-                />
-              </div>
-
-              <div className="flex items-center space-x-4">
-                <div className="flex items-center space-x-2">
-                  <label className="text-sm text-gray-400">Start:</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max={duration / 1000}
-                    value={Math.floor(trimStart / 1000)}
-                    onChange={(e) =>
-                      handleTrimStartChange(parseInt(e.target.value) * 1000)
-                    }
-                    className="w-20 bg-gray-700 rounded px-2 py-1 text-sm"
-                  />
-                </div>
-
-                <div className="flex items-center space-x-2">
-                  <label className="text-sm text-gray-400">End:</label>
-                  <input
-                    type="number"
-                    min="0"
-                    max={duration / 1000}
-                    value={Math.floor(trimEnd / 1000)}
-                    onChange={(e) =>
-                      handleTrimEndChange(parseInt(e.target.value) * 1000)
-                    }
-                    className="w-20 bg-gray-700 rounded px-2 py-1 text-sm"
-                  />
-                </div>
-              </div>
-            </div>
-          </div>
         </div>
       </div>
     </div>

@@ -33,6 +33,13 @@ let recordingProcess: ChildProcessWithoutNullStreams | null = null;
 let clipMarkers: ClipMarker[] = [];
 let currentStream: StreamSession | null = null;
 
+interface VideoDimensions {
+  width: number;
+  height: number;
+}
+
+const videoDimensionsCache = new Map<string, VideoDimensions>();
+
 const bufferDir = path.join(os.tmpdir(), "twitch-recorder-buffer");
 const captureManager = DesktopCaptureManager.getInstance();
 
@@ -258,6 +265,30 @@ function markClip(): void {
 }
 
 /**
+ * Get video dimensions with caching
+ */
+async function getCachedVideoDimensions(
+  inputPath: string
+): Promise<VideoDimensions> {
+  const cacheKey = `${inputPath}_${fs.statSync(inputPath).mtime.getTime()}`;
+
+  if (videoDimensionsCache.has(cacheKey)) {
+    return videoDimensionsCache.get(cacheKey)!;
+  }
+
+  const dimensions = await getVideoDimensions(inputPath);
+  videoDimensionsCache.set(cacheKey, dimensions);
+
+  // Clean old cache entries (keep only last 10)
+  if (videoDimensionsCache.size > 10) {
+    const keys = Array.from(videoDimensionsCache.keys());
+    keys.slice(0, -10).forEach((key) => videoDimensionsCache.delete(key));
+  }
+
+  return dimensions;
+}
+
+/**
  * Export clip by requesting renderer to handle it.
  */
 async function exportClip(
@@ -276,9 +307,7 @@ async function exportClip(
 
         if (response.success && response.blob) {
           // Handle the blob data from renderer and process with FFmpeg
-          processClipWithFFmpeg(response.blob, data)
-            .then(resolve)
-            .catch(reject);
+          processClipForExport(response.blob, data).then(resolve).catch(reject);
         } else {
           reject(new Error(response.error || "Export failed"));
         }
@@ -298,7 +327,7 @@ async function exportClip(
 /**
  * Process clip blob with FFmpeg
  */
-async function processClipWithFFmpeg(
+async function processClipForExport(
   blobBuffer: ArrayBuffer,
   data: ClipExportData
 ): Promise<{ success: boolean; outputPath: string }> {
@@ -314,6 +343,13 @@ async function processClipWithFFmpeg(
       throw new Error("FFmpeg binary not found");
     }
 
+    // Get actual video dimensions for text overlay positioning
+    let videoDimensions: VideoDimensions | null = null;
+    if (data.textOverlays && data.textOverlays.length > 0) {
+      videoDimensions = await getCachedVideoDimensions(tempInput);
+      logger.log("Video dimensions for text overlay:", videoDimensions);
+    }
+
     const args = [
       "-i",
       tempInput,
@@ -325,9 +361,38 @@ async function processClipWithFFmpeg(
       "fast",
       "-crf",
       "23",
-      "-y",
-      output,
     ];
+
+    // Add text overlay filters if present
+    if (data.textOverlays && data.textOverlays.length > 0) {
+      const drawTextFilters = data.textOverlays.map((overlay, index) => {
+        // Convert relative position (0-1) to pixel position
+        // Note: You may need to adjust this based on your video dimensions
+        const x = `${overlay.x * 1920}`; // Assuming 1920px width, adjust as needed
+        const y = `${overlay.y * 1080}`; // Assuming 1080px height, adjust as needed
+
+        // Escape special characters in text
+        const escapedText = overlay.text.replace(/[':']/g, "\\$&");
+
+        let drawText = `drawtext=text='${escapedText}':x=${x}:y=${y}:fontsize=${overlay.fontSize}:fontcolor=${overlay.color}`;
+
+        // Add timing if specified
+        if (overlay.startTime > 0 || overlay.endTime < Infinity) {
+          const startSec = overlay.startTime / 1000;
+          const endSec =
+            overlay.endTime === Infinity ? 999999 : overlay.endTime / 1000;
+          drawText += `:enable='between(t,${startSec},${endSec})'`;
+        }
+
+        return drawText;
+      });
+
+      // Combine all drawtext filters
+      const filterComplex = drawTextFilters.join(",");
+      args.push("-vf", filterComplex);
+    }
+
+    args.push("-y", output);
 
     return new Promise((resolve, reject) => {
       const ff = spawn(ffmpegPath, args);
@@ -406,15 +471,29 @@ export async function remuxClipWithFFmpeg(
 
     const args = [
       "-ss",
-      startSec,
+      startSec, // Seek to start position
       "-i",
-      tempInput,
+      tempInput, // Input file
       "-t",
-      durationSec,
-      "-c",
-      "copy",
+      durationSec, // Duration to extract
+      "-c:v",
+      "copy", // Copy video stream without re-encoding
+      "-c:a",
+      "copy", // Copy audio stream without re-encoding
       "-avoid_negative_ts",
-      "make_zero",
+      "make_zero", // Handle negative timestamps
+      "-fflags",
+      "+genpts", // Generate presentation timestamps
+      "-map",
+      "0:v:0", // Explicitly map first video stream
+      "-map",
+      "0:a:0", // Explicitly map first audio stream
+      "-async",
+      "1", // Audio sync method
+      "-vsync",
+      "passthrough", // Video sync method - pass timestamps through
+      "-copyts", // Copy input timestamps
+      "-start_at_zero", // Start output at zero timestamp
       "-y",
       tempOutput,
     ];
@@ -607,29 +686,29 @@ async function convertVideoAspectRatio(
       }
     }
 
-    // const args = [
-    //   "-i",
-    //   tempInput,
-    //   ...filterArgs,
-    //   "-c:a",
-    //   "copy",
-    //   "-y",
-    //   tempOutput,
-    // ];
-
     const args = [
       "-i",
       tempInput,
       ...filterArgs,
-      "-c:v",
-      "libvpx-vp9",
-      "-cpu-used",
-      "4",
       "-c:a",
       "copy",
       "-y",
       tempOutput,
     ];
+
+    // const args = [
+    //   "-i",
+    //   tempInput,
+    //   ...filterArgs,
+    //   "-c:v",
+    //   "libvpx-vp9",
+    //   "-cpu-used",
+    //   "4",
+    //   "-c:a",
+    //   "copy",
+    //   "-y",
+    //   tempOutput,
+    // ];
 
     logger.log("FFmpeg args:", args);
 
@@ -711,7 +790,7 @@ function setupIpc(): void {
 
   ipcMain.handle("get-clip-markers", () => clipMarkers);
 
-  ipcMain.handle("export-clip", (_: IpcMainInvokeEvent, data) =>
+  ipcMain.handle("export-clip", (_: IpcMainInvokeEvent, data: ClipExportData) =>
     exportClip(data)
   );
 
