@@ -1,6 +1,12 @@
 "use client";
 
-import { useState, useEffect, startTransition, useCallback } from "react";
+import {
+  useState,
+  useEffect,
+  startTransition,
+  useCallback,
+  useRef,
+} from "react";
 import StreamViewer from "@/components/stream-viewer";
 import RecordingControls from "@/components/recording-controls";
 import ClipEditor from "@/components/clip-editor";
@@ -12,6 +18,8 @@ import { toast } from "sonner";
 import recordingService from "@/services/recording-service";
 import logger from "@/utils/logger";
 import { waitUntilBufferCatchesUp } from "@/utils/app";
+import { Button } from "@/components/ui/button";
+import { Tv } from "lucide-react";
 
 type TabKey = "stream" | "clips" | "editor";
 
@@ -25,6 +33,13 @@ export default function Home() {
   );
   const [currentStream, setCurrentStream] =
     useState<RecordingStartedInfo | null>(null);
+
+  const cachedBlobsRef = useRef<
+    Map<string, { dimensions: { width: number; height: number } }>
+  >(new Map());
+
+  const [exportAspectRatio, setExportAspectRatio] = useState<string>("");
+  const [exportCropMode, setExportCropMode] = useState<string>("letterbox");
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.electronAPI) {
@@ -140,7 +155,8 @@ export default function Home() {
 
             const blob = await recordingService.getClipBlob(
               clipData.startTime,
-              clipData.endTime
+              clipData.endTime,
+              {}
             );
 
             if (!blob || blob.size === 0) {
@@ -247,10 +263,6 @@ export default function Home() {
     startTransition(() => setActiveTab("editor"));
   };
 
-  const handleClipExported = () => {
-    loadClipMarkers();
-  };
-
   const handleTabClick = useCallback(
     (key: TabKey) => {
       startTransition(() => {
@@ -260,14 +272,38 @@ export default function Home() {
     [setActiveTab]
   );
 
+  const handleBlobLoaded = useCallback(
+    (clipId: string, dimensions: { width: number; height: number }) => {
+      cachedBlobsRef.current.set(clipId, { dimensions });
+      logger.log("Cached blob for clip:", {
+        clipId,
+        dimensions,
+      });
+    },
+    []
+  );
+
+  const handleExportSettingsChange = useCallback(
+    (convertAspectRatio: string, cropMode: string) => {
+      setExportAspectRatio(convertAspectRatio);
+      setExportCropMode(cropMode);
+      logger.log("Export settings updated in Page.tsx", {
+        convertAspectRatio,
+        cropMode,
+      });
+    },
+    []
+  );
+
   return (
-    <div className="min-h-screen bg-gray-900 text-white">
-      <header className="bg-gray-800 border-b border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
+    <div className="min-h-screen bg-surface-primary text-foreground-default font-sans text-sm">
+      <header className="bg-surface-secondary border-b border-gray-700/50">
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8">
           <div className="flex items-center justify-between h-16">
             <div className="flex items-center">
-              <h1 className="text-lg font-bold font-mono text-purple-400">
-                Twitch Clip Recorder
+              <h1 className="text-lg font-bold font-mono text-primary flex items-center space-x-2">
+                <Tv size={20} className="text-primary" />
+                <span>Twitch Clip Recorder</span>
               </h1>
             </div>
             <div className="flex items-center space-x-4">
@@ -282,44 +318,53 @@ export default function Home() {
         </div>
       </header>
 
-      <nav className="bg-gray-800 border-b border-gray-700">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8">
-          <div className="flex space-x-8 font-sans">
-            <button
+      <nav className="bg-surface-secondary border-b border-gray-700/50">
+        <div className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8">
+          <div className="flex space-x-8">
+            <Button
               onClick={() => handleTabClick("stream")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm cursor-pointer ${
-                activeTab === "stream"
-                  ? "border-purple-500 text-purple-400"
-                  : "border-transparent text-gray-400 hover:text-gray-300"
-              }`}
+              className={`rounded-none py-3 px-1 border-b-2 font-medium text-xs cursor-pointer
+                ${
+                  activeTab === "stream"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-foreground-subtle hover:text-foreground-default hover:bg-surface-hover"
+                }
+              `}
+              variant="ghost"
             >
               Stream Viewer
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => handleTabClick("clips")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm cursor-pointer ${
-                activeTab === "clips"
-                  ? "border-purple-500 text-purple-400"
-                  : "border-transparent text-gray-400 hover:text-gray-300"
-              }`}
+              className={`rounded-none py-3 px-1 border-b-2 font-medium text-xs cursor-pointer
+                ${
+                  activeTab === "clips"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-foreground-subtle hover:text-foreground-default hover:bg-surface-hover"
+                }
+              `}
+              variant="ghost"
             >
               Clips ({clipMarkers.length})
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() => handleTabClick("editor")}
-              className={`py-4 px-1 border-b-2 font-medium text-sm cursor-pointer ${
-                activeTab === "editor"
-                  ? "border-purple-500 text-purple-400"
-                  : "border-transparent text-gray-400 hover:text-gray-300"
-              }`}
+              className={`rounded-none py-3 px-1 border-b-2 font-medium text-xs cursor-pointer
+                ${
+                  activeTab === "editor"
+                    ? "border-primary text-primary"
+                    : "border-transparent text-foreground-subtle hover:text-foreground-default hover:bg-surface-hover"
+                }
+              `}
+              variant="ghost"
             >
               Editor
-            </button>
+            </Button>
           </div>
         </div>
       </nav>
 
-      <main className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
+      <main className="max-w-screen-xl mx-auto px-4 sm:px-6 lg:px-8 py-6">
         {activeTab === "stream" && (
           <StreamViewer
             isRecording={isRecording}
@@ -336,38 +381,42 @@ export default function Home() {
         )}
 
         {activeTab === "editor" && (
-          <ClipEditor clip={selectedClip} onClipExported={handleClipExported} />
+          <ClipEditor
+            clip={selectedClip}
+            onBlobLoaded={handleBlobLoaded}
+            onExportSettingsChange={handleExportSettingsChange}
+          />
         )}
       </main>
 
-      <div className="fixed z-20 bottom-0 left-0 right-0 bg-gray-800 border-t border-gray-700 px-4 py-2">
-        <div className="flex items-center justify-between text-sm">
-          <div className="flex items-center space-x-4">
+      <div className="fixed z-20 bottom-0 left-0 right-0 bg-surface-secondary border-t border-gray-700/50 px-4 py-2">
+        <div className="max-w-screen-xl mx-auto flex items-center justify-between text-xs">
+          <div className="flex items-center space-x-3">
             <div
               className={`flex items-center space-x-2 ${
-                isRecording ? "text-red-400" : "text-gray-400"
+                isRecording ? "text-error" : "text-foreground-muted"
               }`}
             >
               <div
                 className={`w-2 h-2 rounded-full ${
-                  isRecording ? "bg-red-400 animate-pulse" : "bg-gray-400"
+                  isRecording ? "bg-error animate-pulse" : "bg-foreground-muted"
                 }`}
               ></div>
               <span>{isRecording ? "Recording" : "Not Recording"}</span>
             </div>
             {isRecording && recordingStartTime && (
-              <div className="text-gray-400">
+              <div className="text-foreground-muted">
                 Started: {new Date(recordingStartTime).toLocaleTimeString()}
               </div>
             )}
           </div>
-          <div className="text-gray-400">
+          <div className="text-foreground-muted">
             Hotkeys:{" "}
-            <kbd className="px-2 py-1 bg-gray-700 rounded-md text-white font-mono text-xs">
+            <kbd className="px-2 py-0.5 bg-surface-tertiary rounded-sm text-foreground-default font-mono text-xs border border-gray-700/50">
               Ctrl+Shift+M
             </kbd>{" "}
             (Mark),{" "}
-            <kbd className="px-2 py-1 bg-gray-700 rounded-md text-white font-mono text-xs">
+            <kbd className="px-2 py-0.5 bg-surface-tertiary rounded-sm text-foreground-default font-mono text-xs border border-gray-700/50">
               Ctrl+Shift+R
             </kbd>{" "}
             (Record)

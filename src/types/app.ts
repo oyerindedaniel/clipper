@@ -13,8 +13,8 @@ export interface ClipMarker {
 export interface TextOverlay {
   id: string;
   text: string;
-  x: number;
-  y: number;
+  x: number; // Not for positioning for export 0 -> 1
+  y: number; // Not for positioning for export 0 -> 1
   startTime: number;
   endTime: number;
   fontSize: number;
@@ -26,7 +26,7 @@ export interface TextOverlay {
   bold: boolean;
   italic: boolean;
   underline: boolean;
-  // alignment: "left" | "center" | "right";
+  alignment: "left" | "center" | "right";
   visible: boolean;
 }
 
@@ -40,12 +40,16 @@ export interface AudioTrack {
   visible: boolean;
 }
 
+export type CropMode = "letterbox" | "crop" | "stretch";
+
 export interface ExportSettings {
   format: "mp4" | "webm" | "mov";
   quality: "low" | "medium" | "high" | "ultra";
   resolution: "720p" | "1080p" | "1440p" | "4k";
   fps: 30 | 60;
   bitrate: number;
+  convertAspectRatio?: string;
+  cropMode?: CropMode;
 }
 
 /**

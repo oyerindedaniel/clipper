@@ -63,4 +63,39 @@ function getVideoBoundingBox(video: HTMLVideoElement): {
   return { x, y, width, height };
 }
 
-export { waitUntilBufferCatchesUp, getVideoBoundingBox };
+/**
+ * Convert overlay DOM position to normalized (0–1) coordinates
+ * relative to the intrinsic video frame.
+ *
+ * @param video - HTML video element
+ * @param position - Overlay position relative to video element
+ * @returns Normalized { x, y } in intrinsic video coordinate space
+ */
+function getOverlayNormalizedCoords(
+  video: HTMLVideoElement,
+  position: { overlayX: number; overlayY: number }
+): { x: number; y: number } {
+  const { overlayX, overlayY } = position;
+  const {
+    x: frameX,
+    y: frameY,
+    width: frameW,
+    height: frameH,
+  } = getVideoBoundingBox(video);
+
+  // Convert from absolute overlay offset → relative to video frame
+  const relativeX = overlayX - frameX;
+  const relativeY = overlayY - frameY;
+
+  // Normalize to the intrinsic video frame (clamped between 0 and 1)
+  const x = Math.max(0, Math.min(1, relativeX / frameW));
+  const y = Math.max(0, Math.min(1, relativeY / frameH));
+
+  return { x, y };
+}
+
+export {
+  waitUntilBufferCatchesUp,
+  getVideoBoundingBox,
+  getOverlayNormalizedCoords,
+};

@@ -265,30 +265,6 @@ function markClip(): void {
 }
 
 /**
- * Get video dimensions with caching
- */
-async function getCachedVideoDimensions(
-  inputPath: string
-): Promise<VideoDimensions> {
-  const cacheKey = `${inputPath}_${fs.statSync(inputPath).mtime.getTime()}`;
-
-  if (videoDimensionsCache.has(cacheKey)) {
-    return videoDimensionsCache.get(cacheKey)!;
-  }
-
-  const dimensions = await getVideoDimensions(inputPath);
-  videoDimensionsCache.set(cacheKey, dimensions);
-
-  // Clean old cache entries (keep only last 10)
-  if (videoDimensionsCache.size > 10) {
-    const keys = Array.from(videoDimensionsCache.keys());
-    keys.slice(0, -10).forEach((key) => videoDimensionsCache.delete(key));
-  }
-
-  return dimensions;
-}
-
-/**
  * Export clip by requesting renderer to handle it.
  */
 async function exportClip(
@@ -343,13 +319,6 @@ async function processClipForExport(
       throw new Error("FFmpeg binary not found");
     }
 
-    // Get actual video dimensions for text overlay positioning
-    let videoDimensions: VideoDimensions | null = null;
-    if (data.textOverlays && data.textOverlays.length > 0) {
-      videoDimensions = await getCachedVideoDimensions(tempInput);
-      logger.log("Video dimensions for text overlay:", videoDimensions);
-    }
-
     const args = [
       "-i",
       tempInput,
@@ -367,9 +336,9 @@ async function processClipForExport(
     if (data.textOverlays && data.textOverlays.length > 0) {
       const drawTextFilters = data.textOverlays.map((overlay, index) => {
         // Convert relative position (0-1) to pixel position
-        // Note: You may need to adjust this based on your video dimensions
-        const x = `${overlay.x * 1920}`; // Assuming 1920px width, adjust as needed
-        const y = `${overlay.y * 1080}`; // Assuming 1080px height, adjust as needed
+
+        const x = `${overlay.x * 1920}`;
+        const y = `${overlay.y * 1080}`;
 
         // Escape special characters in text
         const escapedText = overlay.text.replace(/[':']/g, "\\$&");

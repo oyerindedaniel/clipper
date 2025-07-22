@@ -4,6 +4,8 @@ import type { DesktopSource } from "@/types/app";
 import { normalizeError } from "@/utils/error-utils";
 import { toast } from "sonner";
 import DesktopSourceSkeleton from "@/components/desktop-source-skeleton";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
 
 interface StreamViewerProps {
   isRecording: boolean;
@@ -110,121 +112,127 @@ export default function StreamViewer({
   };
 
   return (
-    <div className="min-h-screen bg-gradient-to-br from-gray-900 to-gray-950 flex flex-col items-center py-12 px-4 sm:px-6 lg:px-8 font-sans text-white">
-      <div className="max-w-4xl w-full space-y-10">
-        <section className="bg-gray-800 rounded-xl p-8 shadow-2xl border border-gray-700 relative overflow-hidden group">
-          <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-gray-800 opacity-20 group-hover:opacity-30 transition-opacity duration-300"></div>
+    <div className="min-h-screen bg-surface-primary flex flex-col items-center py-8 px-4 sm:px-6 lg:px-8 font-sans text-foreground-default text-sm">
+      <div className="max-w-screen-xl w-full space-y-8">
+        <section className="bg-surface-secondary rounded-lg p-6 shadow-sm border border-gray-700/50 relative overflow-hidden group">
+          <div className="absolute inset-0 bg-gradient-to-br from-surface-primary/20 to-surface-secondary/20 opacity-15 group-hover:opacity-25 transition-opacity duration-300"></div>
           <div className="relative z-10">
-            <h2 className="text-xl font-extrabold font-mono text-white mb-8 flex items-center space-x-4 pb-4 border-b border-gray-700">
-              <Tv size={18} className="text-purple-400 flex-shrink-0" />
+            <h2 className="text-xl font-extrabold font-mono text-foreground-default mb-6 flex items-center space-x-3 pb-3 border-b border-gray-700/50">
+              <Tv size={16} className="text-primary flex-shrink-0" />
               <span className="tracking-tight">Twitch Stream</span>
             </h2>
 
-            <div className="flex flex-col md:flex-row items-end gap-6">
+            <div className="flex flex-col md:flex-row items-end gap-4">
               <div className="flex-1 w-full">
                 <label
                   htmlFor="channel-name"
-                  className="block text-sm font-semibold text-gray-300 mb-2"
+                  className="block text-xs font-semibold text-foreground-subtle mb-1.5"
                 >
                   Enter Channel Name
                 </label>
-                <input
+                <Input
                   id="channel-name"
                   type="text"
                   value={channelName}
                   onChange={(e) => setChannelName(e.target.value)}
                   placeholder="e.g., ddg"
-                  className="w-full px-5 py-2.5 text-sm bg-gray-900 border font-mono border-gray-700 rounded-lg text-white placeholder-gray-500 focus:outline-none focus:ring-2 focus:ring-purple-500 transition duration-300 ease-in-out hover:border-purple-600"
                   onKeyDown={(e) => e.key === "Enter" && handleOpenStream()}
+                  className="px-3 py-1.5 text-xs"
                 />
               </div>
-              <button
+              <Button
                 onClick={handleOpenStream}
                 disabled={!channelName.trim()}
-                className="w-full cursor-pointer md:w-auto text-sm self-end font-mono px-10 py-2.5 bg-purple-600 text-white rounded-lg hover:bg-purple-700 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center space-x-3 font-bold transition duration-500 ease-in-out transform hover:scale-[102%] active:scale-95 shadow-lg hover:shadow-xl"
+                className="w-full md:w-auto self-end flex items-center justify-center space-x-2 px-3 py-1.5 text-xs"
+                variant="default"
+                size="sm"
               >
-                <Play size={18} />
+                <Play size={16} />
                 <span>Open Stream</span>
-              </button>
+              </Button>
             </div>
           </div>
         </section>
 
-        <section className="bg-gray-800 rounded-xl p-8 shadow-2xl border border-gray-700 relative overflow-hidden group">
-          <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-gray-800 opacity-20 group-hover:opacity-30 transition-opacity duration-300"></div>
+        <section className="bg-surface-secondary rounded-lg p-6 shadow-sm border border-gray-700/50 relative overflow-hidden group">
+          <div className="absolute inset-0 bg-gradient-to-br from-surface-primary/20 to-surface-secondary/20 opacity-15 group-hover:opacity-25 transition-opacity duration-300"></div>
           <div className="relative z-10">
-            <h2 className="text-xl font-mono font-extrabold text-white mb-8 flex items-center space-x-4 pb-4 border-b border-gray-700">
-              <Monitor size={18} className="text-red-400 flex-shrink-0" />
+            <h2 className="text-xl font-mono font-extrabold text-foreground-default mb-6 flex items-center space-x-3 pb-3 border-b border-gray-700/50">
+              <Monitor size={16} className="text-error flex-shrink-0" />
               <span className="tracking-tight">Screen Recording</span>
             </h2>
 
-            <div className="mb-8">
-              <label className="block text-base font-semibold text-gray-300 mb-2">
+            <div className="mb-6">
+              <label className="block text-sm font-semibold text-foreground-subtle mb-1.5">
                 Capture Source
               </label>
-              <div className="flex flex-col md:flex-row items-center gap-6">
+              <div className="flex flex-col md:flex-row items-center gap-4">
                 <div className="flex-1 w-full">
                   {selectedSource ? (
-                    <div className="flex items-center space-x-5 p-4 bg-gray-900 rounded-lg border border-gray-700">
+                    <div className="flex items-center space-x-4 p-3 bg-surface-primary rounded-md border border-gray-700/50">
                       <img
                         src={selectedSource.thumbnail}
                         alt={selectedSource.name}
-                        className="w-36 h-24 object-cover rounded-md border border-gray-600 shadow-md"
+                        className="w-32 h-20 object-cover rounded-sm border border-gray-700/50 shadow-xs"
                       />
                       <div className="flex-1">
-                        <p className="text-white font-bold text-base">
+                        <p className="text-foreground-default font-bold text-sm">
                           {selectedSource.name}
                         </p>
-                        <p className="text-gray-400 text-sm">Selected Source</p>
+                        <p className="text-foreground-subtle text-xs">
+                          Selected Source
+                        </p>
                       </div>
                     </div>
                   ) : (
-                    <div className="p-4 bg-gray-900 rounded-lg border-2 border-dashed border-gray-700 text-center flex items-center justify-center h-32">
-                      <p className="text-gray-400 font-mono text-base font-medium">
+                    <div className="p-3 bg-surface-primary rounded-md border-2 border-dashed border-gray-700/50 text-center flex items-center justify-center h-28">
+                      <p className="text-foreground-muted font-mono text-sm font-medium">
                         No source selected. Please browse and select one.
                       </p>
                     </div>
                   )}
                 </div>
-                <button
+                <Button
                   onClick={handleToggleSourceSelector}
-                  className="w-full cursor-pointer md:w-auto font-mono text-sm px-10 py-2.5 bg-gray-700 text-white rounded-lg hover:bg-gray-600 font-bold transition duration-500 ease-in-out transform hover:scale-[102%] active:scale-95 shadow-lg hover:shadow-xl"
+                  className="w-full md:w-auto flex items-center justify-center px-3 py-1.5 text-xs"
+                  variant="secondary"
+                  size="sm"
                 >
                   {showSourceSelector ? "Hide Sources" : "Browse Sources"}
-                </button>
+                </Button>
               </div>
             </div>
 
             {showSourceSelector && (
-              <div className="mb-8 p-6 bg-gray-700 rounded-lg border border-gray-600 shadow-inner">
-                <h3 className="text-base font-bold text-gray-300 mb-5">
+              <div className="mb-6 p-4 bg-surface-secondary rounded-md border border-gray-700/50 shadow-inner">
+                <h3 className="text-sm font-bold text-foreground-subtle mb-4">
                   Available Sources
                 </h3>
                 {isLoadingSources ? (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-h-96 overflow-y-auto pr-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-scroll">
                     {Array.from({ length: 6 }).map((_, index) => (
                       <DesktopSourceSkeleton key={index} />
                     ))}
                   </div>
                 ) : (
-                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-6 max-h-96 overflow-y-auto pr-2">
+                  <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-3 gap-4 max-h-96 overflow-y-scroll">
                     {desktopSources.map((source) => (
                       <button
                         key={source.id}
                         onClick={() => handleSourceSelect(source)}
-                        className={`relative p-3 rounded-lg transition duration-200 ease-in-out group \
+                        className={`relative p-2 rounded-md transition duration-200 ease-in-out group flex flex-col items-center justify-center space-y-2
                       ${
                         selectedSource?.id === source.id
-                          ? "bg-purple-900 border-2 border-purple-500 shadow-lg"
-                          : "bg-gray-800 hover:bg-gray-700 border border-gray-700"
+                          ? "bg-primary/15 border-2 border-primary shadow-sm"
+                          : "bg-surface-tertiary hover:bg-surface-hover border border-gray-700/50"
                       }`}
                       >
                         <img
                           src={source.thumbnail}
                           alt={source.name}
-                          className="w-full h-40 object-cover rounded-md mb-3 border border-gray-600 group-hover:border-purple-400 transition-colors shadow-sm"
+                          className="w-full h-40 object-cover rounded-sm mb-2 border border-gray-700/50 group-hover:border-primary-hover transition-colors shadow-xs"
                         />
-                        <p className="text-white text-sm font-semibold truncate">
+                        <p className="text-foreground-default text-xs font-semibold truncate">
                           {source.name}
                         </p>
                       </button>
@@ -234,95 +242,99 @@ export default function StreamViewer({
               </div>
             )}
 
-            <div className="flex flex-col md:flex-row items-center justify-between pt-8 border-t border-gray-700">
-              <div className="flex items-center space-x-4 mb-4 md:mb-0">
+            <div className="flex flex-col md:flex-row items-center justify-between pt-6 border-t border-gray-700/50">
+              <div className="flex items-center space-x-3 mb-3 md:mb-0">
                 <div
-                  className={`w-3 h-3 rounded-full ${
-                    isRecording ? "bg-red-500 animate-pulse" : "bg-gray-500"
+                  className={`w-2.5 h-2.5 rounded-full ${
+                    isRecording
+                      ? "bg-error animate-pulse"
+                      : "bg-foreground-muted"
                   }`}
                 ></div>
-                <span className="font-bold text-base text-white">
+                <span className="font-bold text-sm text-foreground-default">
                   {isRecording ? "Recording Active" : "Ready to Record"}
                 </span>
                 {isRecording && (
-                  <div className="text-green-400 font-mono text-xl ml-4 tracking-wide">
+                  <div className="text-success font-mono text-base ml-3 tracking-wide">
                     {formatDuration(recordingStartTime)}
                   </div>
                 )}
               </div>
 
-              <button
+              <Button
                 onClick={handleStartRecording}
                 disabled={isRecording || !selectedSource}
-                className="w-full md:w-auto rounded-3xl cursor-pointer px-12 py-2.5 bg-red-600 text-white hover:bg-red-700 disabled:opacity-30 disabled:cursor-not-allowed flex items-center justify-center space-x-3 font-bold text-base transition duration-500 ease-in-out transform hover:scale-[103%] active:scale-95 shadow-lg hover:shadow-xl"
+                className="w-full md:w-auto flex items-center justify-center space-x-2 px-3 py-1.5 text-xs"
+                variant="default"
+                size="sm"
               >
-                <Square size={18} />
+                <Play size={16} />
                 <span>Start Recording</span>
-              </button>
+              </Button>
             </div>
           </div>
         </section>
 
-        <section className="bg-gray-800 rounded-xl p-8 shadow-2xl border border-gray-700 relative overflow-hidden md:col-span-2">
-          <div className="absolute inset-0 bg-gradient-to-br from-gray-900 to-gray-800 opacity-20 group-hover:opacity-30 transition-opacity duration-300"></div>
+        <section className="bg-surface-secondary rounded-lg p-6 shadow-sm border border-gray-700/50 relative overflow-hidden md:col-span-2">
+          <div className="absolute inset-0 bg-gradient-to-br from-surface-primary/20 to-surface-secondary/20 opacity-15 group-hover:opacity-25 transition-opacity duration-300"></div>
           <div className="relative z-10">
-            <h2 className="text-xl font-extrabold text-white mb-8 pb-4 border-b border-gray-700">
+            <h2 className="text-xl font-extrabold text-foreground-default mb-6 pb-3 border-b border-gray-700/50">
               Instructions
             </h2>
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-8 lg:gap-12 text-gray-300">
-              <div className="flex items-start space-x-5">
-                <div className="w-12 h-12 bg-purple-600 rounded-full font-mono flex items-center justify-center text-white text-xl font-bold flex-shrink-0 shadow-lg">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-6 lg:gap-8 text-foreground-subtle">
+              <div className="flex items-start space-x-4">
+                <div className="w-10 h-10 bg-primary rounded-full font-mono flex items-center justify-center text-foreground-on-accent text-lg font-bold flex-shrink-0 shadow-sm">
                   1
                 </div>
                 <div>
-                  <p className="font-extrabold text-base font-mono mb-1 text-white">
+                  <p className="font-extrabold text-sm font-mono mb-1 text-foreground-default">
                     Open a Twitch stream
                   </p>
-                  <p className="text-sm text-gray-400 leading-relaxed">
+                  <p className="text-xs text-foreground-subtle leading-relaxed">
                     Enter a channel name and click "Open Stream" to launch the
                     Twitch window.
                   </p>
                 </div>
               </div>
-              <div className="flex items-start space-x-5">
-                <div className="w-12 h-12 bg-purple-600 font-mono rounded-full flex items-center justify-center text-white text-xl font-bold flex-shrink-0 shadow-lg">
+              <div className="flex items-start space-x-4">
+                <div className="w-10 h-10 bg-primary font-mono rounded-full flex items-center justify-center text-foreground-on-accent text-lg font-bold flex-shrink-0 shadow-sm">
                   2
                 </div>
                 <div>
-                  <p className="font-extrabold font-mono text-base mb-1 text-white">
+                  <p className="font-extrabold font-mono text-sm mb-1 text-foreground-default">
                     Select capture source
                   </p>
-                  <p className="text-sm text-gray-400 leading-relaxed">
+                  <p className="text-xs text-foreground-subtle leading-relaxed">
                     Choose the window or screen you want to record from the list
                     of available sources.
                   </p>
                 </div>
               </div>
-              <div className="flex items-start space-x-5">
-                <div className="w-12 h-12 font-mono bg-purple-600 rounded-full flex items-center justify-center text-white text-2xl font-bold flex-shrink-0 shadow-lg">
+              <div className="flex items-start space-x-4">
+                <div className="w-10 h-10 font-mono bg-primary rounded-full flex items-center justify-center text-foreground-on-accent text-xl font-bold flex-shrink-0 shadow-sm">
                   3
                 </div>
                 <div>
-                  <p className="font-extrabold font-mono text-base mb-1 text-white">
+                  <p className="font-extrabold font-mono text-sm mb-1 text-foreground-default">
                     Start recording
                   </p>
-                  <p className="text-sm text-gray-400 leading-relaxed">
+                  <p className="text-xs text-foreground-subtle leading-relaxed">
                     Click "Start Recording" to begin capturing video and audio
                     from your selected source.
                   </p>
                 </div>
               </div>
-              <div className="flex items-start space-x-5">
-                <div className="w-12 h-12 font-mono bg-purple-600 rounded-full flex items-center justify-center text-white text-2xl font-bold flex-shrink-0 shadow-lg">
+              <div className="flex items-start space-x-4">
+                <div className="w-10 h-10 font-mono bg-primary rounded-full flex items-center justify-center text-foreground-on-accent text-xl font-bold flex-shrink-0 shadow-sm">
                   4
                 </div>
                 <div>
-                  <p className="font-extrabold font-mono text-base mb-1 text-white">
+                  <p className="font-extrabold font-mono text-sm mb-1 text-foreground-default">
                     Mark clips
                   </p>
-                  <p className="text-sm text-gray-400 leading-relaxed">
+                  <p className="text-xs text-foreground-subtle leading-relaxed">
                     Press{" "}
-                    <kbd className="px-2.5 py-1 bg-gray-700 rounded-lg text-sm font-bold tracking-wide border border-gray-600 shadow-md">
+                    <kbd className="px-2 py-0.5 bg-surface-tertiary rounded-sm text-xs font-bold tracking-wide border border-gray-700/50 shadow-xs">
                       Ctrl+Shift+M
                     </kbd>{" "}
                     to instantly mark interesting moments during your recording.

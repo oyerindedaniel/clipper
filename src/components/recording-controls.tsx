@@ -1,5 +1,6 @@
 import { useState, useEffect } from "react";
 import { Play, Square, Circle } from "lucide-react";
+import { Button } from "./ui/button";
 
 interface RecordingControlsProps {
   isRecording: boolean;
@@ -47,7 +48,7 @@ export default function RecordingControls({
   return (
     <div className="flex items-center space-x-4">
       {isRecording && (
-        <div className="flex items-center space-x-2 text-red-400">
+        <div className="flex items-center space-x-2 text-error">
           <Circle size={8} className="fill-current animate-pulse" />
           <span className="font-mono text-sm">
             {formatDuration(recordingDuration)}
@@ -55,11 +56,11 @@ export default function RecordingControls({
         </div>
       )}
 
-      <button
+      <Button
         onClick={isRecording ? onStopRecording : onStartRecording}
-        className={`px-4 py-2 cursor-pointer rounded-3xl text-sm flex items-center space-x-2 font-medium transition-colors ${
+        className={`px-4 py-2 cursor-pointer rounded-3xl text-sm flex items-center space-x-2 font-medium transition-colors text-foreground-on-accent ${
           isRecording
-            ? "bg-red-600 hover:bg-red-700 text-white"
+            ? "bg-error hover:bg-error/90"
             : "bg-green-600 hover:bg-green-700 text-white"
         }`}
       >
@@ -74,7 +75,7 @@ export default function RecordingControls({
             <span>Start Recording</span>
           </>
         )}
-      </button>
+      </Button>
     </div>
   );
 }

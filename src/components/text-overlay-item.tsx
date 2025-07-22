@@ -11,6 +11,15 @@ import {
   AlignRight,
 } from "lucide-react";
 import { TextOverlay } from "@/types/app";
+import { Button } from "@/components/ui/button";
+import { Input } from "@/components/ui/input";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 
 interface TextOverlayItemProps {
   overlay: TextOverlay;
@@ -31,14 +40,14 @@ const TextOverlayItem = ({
 }: TextOverlayItemProps) => {
   return (
     <div
-      className={`p-3 rounded-lg border-2 ${
+      className={`p-3 rounded-lg border-2 text-sm ${
         selectedOverlay === overlay.id
-          ? "border-blue-500 bg-blue-900/20"
-          : "border-gray-600 bg-gray-700/50"
+          ? "border-primary bg-primary/10"
+          : "border-gray-700/50 bg-surface-secondary"
       }`}
     >
       <div className="flex items-center justify-between mb-2">
-        <input
+        <Input
           type="text"
           value={overlay.text}
           onChange={(e) =>
@@ -46,42 +55,45 @@ const TextOverlayItem = ({
               text: e.target.value,
             })
           }
-          className="flex-1 bg-gray-800 rounded px-2 py-1 text-sm"
+          className="flex-1 px-2 py-1 text-sm"
           placeholder="Text content"
         />
         <div className="flex items-center space-x-1 ml-2">
-          <button
+          <Button
             onClick={() =>
               updateTextOverlay(overlay.id, {
                 visible: !overlay.visible,
               })
             }
             className={`p-1 rounded ${
-              overlay.visible ? "text-blue-400" : "text-gray-500"
+              overlay.visible ? "text-primary" : "text-foreground-muted"
             }`}
+            variant="ghost"
+            size="icon"
           >
             {overlay.visible ? <Eye size={16} /> : <EyeOff size={16} />}
-          </button>
-          <button
+          </Button>
+          <Button
             onClick={() => deleteTextOverlay(overlay.id)}
-            className="p-1 text-red-400 hover:text-red-300"
+            className="p-1 text-error hover:text-error/80"
+            variant="ghost"
+            size="icon"
           >
             <Trash2 size={16} />
-          </button>
+          </Button>
         </div>
       </div>
 
       {selectedOverlay === overlay.id && (
-        <div className="space-y-3 mt-3 pt-3 border-t border-gray-600">
-          {/* Display Type Selection */}
+        <div className="space-y-3 mt-3 pt-3 border-t border-gray-700/50">
           <div>
-            <label className="block text-xs text-gray-400 mb-1">
+            <label className="block text-xs text-foreground-subtle mb-1">
               Display Type
             </label>
-            <select
+            <Select
               value={overlay.endTime === duration ? "persistent" : "timed"}
-              onChange={(e) => {
-                if (e.target.value === "persistent") {
+              onValueChange={(value) => {
+                if (value === "persistent") {
                   updateTextOverlay(overlay.id, {
                     startTime: 0,
                     endTime: duration,
@@ -93,20 +105,25 @@ const TextOverlayItem = ({
                   });
                 }
               }}
-              className="w-full bg-gray-800 rounded px-2 py-1 text-sm"
             >
-              <option value="timed">Timed (Subtitle-like)</option>
-              <option value="persistent">Persistent (Always visible)</option>
-            </select>
+              <SelectTrigger className="w-full px-2 py-1 h-auto text-xs">
+                <SelectValue placeholder="Select display type" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="timed">Timed (Subtitle-like)</SelectItem>
+                <SelectItem value="persistent">
+                  Persistent (Always visible)
+                </SelectItem>
+              </SelectContent>
+            </Select>
           </div>
 
-          {/* Font Size and Opacity */}
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">
+              <label className="block text-xs text-foreground-subtle mb-1">
                 Font Size
               </label>
-              <input
+              <Input
                 type="range"
                 min="12"
                 max="120"
@@ -116,14 +133,14 @@ const TextOverlayItem = ({
                     fontSize: parseInt(e.target.value),
                   })
                 }
-                className="w-full"
+                className="w-full h-7"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">
+              <label className="block text-xs text-foreground-subtle mb-1">
                 Opacity
               </label>
-              <input
+              <Input
                 type="range"
                 min="0"
                 max="1"
@@ -134,59 +151,63 @@ const TextOverlayItem = ({
                     opacity: parseFloat(e.target.value),
                   })
                 }
-                className="w-full"
+                className="w-full h-7"
               />
             </div>
           </div>
 
-          {/* Text Formatting */}
           <div className="flex items-center space-x-2">
-            <button
+            <Button
               onClick={() =>
                 updateTextOverlay(overlay.id, {
                   bold: !overlay.bold,
                 })
               }
               className={`p-2 rounded ${
-                overlay.bold ? "bg-blue-600" : "bg-gray-700"
+                overlay.bold ? "bg-primary" : "bg-surface-tertiary"
               }`}
+              variant="ghost"
+              size="icon"
             >
               <Bold size={16} />
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() =>
                 updateTextOverlay(overlay.id, {
                   italic: !overlay.italic,
                 })
               }
               className={`p-2 rounded ${
-                overlay.italic ? "bg-blue-600" : "bg-gray-700"
+                overlay.italic ? "bg-primary" : "bg-surface-tertiary"
               }`}
+              variant="ghost"
+              size="icon"
             >
               <Italic size={16} />
-            </button>
-            <button
+            </Button>
+            <Button
               onClick={() =>
                 updateTextOverlay(overlay.id, {
                   underline: !overlay.underline,
                 })
               }
               className={`p-2 rounded ${
-                overlay.underline ? "bg-blue-600" : "bg-gray-700"
+                overlay.underline ? "bg-primary" : "bg-surface-tertiary"
               }`}
+              variant="ghost"
+              size="icon"
             >
               <Underline size={16} />
-            </button>
+            </Button>
           </div>
 
-          {/* Text Alignment */}
           <div className="flex items-center space-x-2">
             {[
               { value: "left", icon: AlignLeft },
               { value: "center", icon: AlignCenter },
               { value: "right", icon: AlignRight },
             ].map(({ value, icon: Icon }) => (
-              <button
+              <Button
                 key={value}
                 onClick={() =>
                   updateTextOverlay(overlay.id, {
@@ -194,21 +215,24 @@ const TextOverlayItem = ({
                   })
                 }
                 className={`p-2 rounded ${
-                  overlay.alignment === value ? "bg-blue-600" : "bg-gray-700"
+                  overlay.alignment === value
+                    ? "bg-primary"
+                    : "bg-surface-tertiary"
                 }`}
+                variant="ghost"
+                size="icon"
               >
                 <Icon size={16} />
-              </button>
+              </Button>
             ))}
           </div>
 
-          {/* Colors */}
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">
+              <label className="block text-xs text-foreground-subtle mb-1">
                 Text Color
               </label>
-              <input
+              <Input
                 type="color"
                 value={overlay.color}
                 onChange={(e) =>
@@ -216,14 +240,14 @@ const TextOverlayItem = ({
                     color: e.target.value,
                   })
                 }
-                className="w-full h-8 rounded"
+                className="w-full h-8 rounded p-0"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">
+              <label className="block text-xs text-foreground-subtle mb-1">
                 Background
               </label>
-              <input
+              <Input
                 type="color"
                 value={overlay.backgroundColor}
                 onChange={(e) =>
@@ -231,18 +255,17 @@ const TextOverlayItem = ({
                     backgroundColor: e.target.value,
                   })
                 }
-                className="w-full h-8 rounded"
+                className="w-full h-8 rounded p-0"
               />
             </div>
           </div>
 
-          {/* Timing Controls */}
           <div className="grid grid-cols-2 gap-2">
             <div>
-              <label className="block text-xs text-gray-400 mb-1">
+              <label className="block text-xs text-foreground-subtle mb-1">
                 Start Time (s)
               </label>
-              <input
+              <Input
                 type="number"
                 min="0"
                 max={Math.floor(duration / 1000)}
@@ -252,14 +275,14 @@ const TextOverlayItem = ({
                     startTime: parseInt(e.target.value) * 1000,
                   })
                 }
-                className="w-full bg-gray-800 rounded px-2 py-1 text-sm"
+                className="w-full px-2 py-1 text-xs"
               />
             </div>
             <div>
-              <label className="block text-xs text-gray-400 mb-1">
+              <label className="block text-xs text-foreground-subtle mb-1">
                 End Time (s)
               </label>
-              <input
+              <Input
                 type="number"
                 min="0"
                 max={Math.floor(duration / 1000)}
@@ -269,7 +292,7 @@ const TextOverlayItem = ({
                     endTime: parseInt(e.target.value) * 1000,
                   })
                 }
-                className="w-full bg-gray-800 rounded px-2 py-1 text-sm"
+                className="w-full px-2 py-1 text-xs"
               />
             </div>
           </div>

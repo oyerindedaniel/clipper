@@ -18,7 +18,7 @@ export const DraggableTextOverlay = ({
   return (
     <div
       className={`absolute select-none cursor-move ${
-        isSelected ? "ring-2 ring-blue-400" : ""
+        isSelected ? "ring-2 ring-primary" : ""
       }`}
       style={{
         transform: "translate3d(0px, 0px, 0)",
@@ -34,7 +34,7 @@ export const DraggableTextOverlay = ({
         fontWeight: overlay.bold ? "bold" : "normal",
         fontStyle: overlay.italic ? "italic" : "normal",
         textDecoration: overlay.underline ? "underline" : "none",
-        // textAlign: overlay.alignment,
+        textAlign: overlay.alignment,
         padding: "8px 12px",
         borderRadius: "4px",
         zIndex: isSelected ? 10 : 1,

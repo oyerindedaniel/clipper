@@ -1,10 +1,14 @@
-import { useRef, useState, useCallback } from "react";
+import { useRef, useState, useCallback, RefObject } from "react";
 import { TextOverlay } from "@/types/app";
+import { getOverlayNormalizedCoords } from "@/utils/app";
+import logger from "@/utils/logger";
 
 /**
  * Hook for managing and dragging text overlays over a canvas.
  */
-export const useTextOverlays = () => {
+export const useTextOverlays = (
+  videoRef: React.RefObject<HTMLVideoElement | null>
+) => {
   const [textOverlays, setTextOverlays] = useState<TextOverlay[]>([]);
   const [selectedOverlay, setSelectedOverlay] = useState<string | null>(null);
 
@@ -47,7 +51,7 @@ export const useTextOverlays = () => {
         bold: false,
         italic: false,
         underline: false,
-        // alignment: "center",
+        alignment: "center",
         visible: true,
       };
 
@@ -112,26 +116,50 @@ export const useTextOverlays = () => {
     setSelectedOverlay(overlayId);
 
     const onMouseMove = (ev: MouseEvent) => {
-      if (!dragRef.current.isDragging || !dragRef.current.element) return;
+      const drag = dragRef.current;
 
-      const dx = ev.clientX - dragRef.current.startX;
-      const dy = ev.clientY - dragRef.current.startY;
+      if (!drag.isDragging || !drag.element) return;
+
+      const dx = ev.clientX - drag.startX;
+      const dy = ev.clientY - drag.startY;
 
       const container = containerRef.current;
       if (!container) return;
 
       const containerRect = container.getBoundingClientRect();
-      let newLeft = dragRef.current.offsetX + dx;
-      let newTop = dragRef.current.offsetY + dy;
+      const elementRect = drag.element.getBoundingClientRect();
 
-      newLeft = Math.max(0, Math.min(containerRect.width, newLeft));
-      newTop = Math.max(0, Math.min(containerRect.height, newTop));
+      const elementWidth = elementRect.width;
+      const elementHeight = elementRect.height;
 
-      if (dragRef.current.rafId) cancelAnimationFrame(dragRef.current.rafId);
+      let newLeft = drag.offsetX + dx;
+      let newTop = drag.offsetY + dy;
 
-      dragRef.current.rafId = requestAnimationFrame(() => {
-        if (dragRef.current.element) {
-          dragRef.current.element.style.transform = `translate3d(${newLeft}px, ${newTop}px, 0)`;
+      newLeft = Math.max(
+        0,
+        Math.min(containerRect.width - elementWidth, newLeft)
+      );
+      newTop = Math.max(
+        0,
+        Math.min(containerRect.height - elementHeight, newTop)
+      );
+
+      if (videoRef && videoRef.current) {
+        const { x, y } = getOverlayNormalizedCoords(videoRef.current, {
+          overlayX: newLeft,
+          overlayY: newTop,
+        });
+
+        logger.log("[Normalized Overlay Position]", { x, y });
+      }
+
+      if (drag.rafId) {
+        cancelAnimationFrame(drag.rafId);
+      }
+
+      drag.rafId = requestAnimationFrame(() => {
+        if (drag.element) {
+          drag.element.style.transform = `translate3d(${newLeft}px, ${newTop}px, 0)`;
         }
       });
     };
