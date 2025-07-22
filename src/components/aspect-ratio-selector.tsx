@@ -77,7 +77,7 @@ const AspectRatioSelector = ({
     <Dialog open={isOpen} onOpenChange={onOpenChange}>
       <DialogContent className="max-w-md p-6 bg-surface-primary rounded-lg shadow-lg space-y-6">
         <DialogHeader className="text-center">
-          <DialogTitle className="text-2xl font-bold text-foreground-default mb-2">
+          <DialogTitle className="text-xl font-bold text-foreground-default mb-2">
             Export Settings
           </DialogTitle>
           <DialogDescription className="text-foreground-subtle">
@@ -139,7 +139,9 @@ const AspectRatioSelector = ({
         )}
 
         <div className="bg-surface-secondary p-4 rounded-lg border border-gray-700/50 shadow-sm">
-          <h4 className="font-medium text-foreground-default mb-2">Preview</h4>
+          <h4 className="font-medium text-base text-foreground-default mb-2">
+            Preview
+          </h4>
           <p className="text-sm text-foreground-subtle">{getPreviewText()}</p>
         </div>
 

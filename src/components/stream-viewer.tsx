@@ -131,6 +131,7 @@ export default function StreamViewer({
                   Enter Channel Name
                 </label>
                 <Input
+                  autoFocus
                   id="channel-name"
                   type="text"
                   value={channelName}

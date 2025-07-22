@@ -792,7 +792,9 @@ function setupIpc(): void {
         cropMode?: "letterbox" | "crop" | "stretch";
       }
     ) => {
-      return remuxClipWithFFmpeg(chunks, clipStartMs, clipEndMs, options);
+      return conversionQueue.add(() =>
+        remuxClipWithFFmpeg(chunks, clipStartMs, clipEndMs, options)
+      );
     }
   );
 }

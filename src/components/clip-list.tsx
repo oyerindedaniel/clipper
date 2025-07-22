@@ -109,6 +109,7 @@ export default function ClipList({
           <div className="flex flex-col md:flex-row md:items-center md:justify-between space-y-4 md:space-y-0 md:space-x-4">
             <div className="flex-1">
               <Input
+                autoFocus
                 type="text"
                 placeholder="Filter clips..."
                 value={filterText}

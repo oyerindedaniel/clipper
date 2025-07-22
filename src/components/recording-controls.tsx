@@ -61,7 +61,7 @@ export default function RecordingControls({
         className={`px-4 py-2 cursor-pointer rounded-3xl text-sm flex items-center space-x-2 font-medium transition-colors text-foreground-on-accent ${
           isRecording
             ? "bg-error hover:bg-error/90"
-            : "bg-green-600 hover:bg-green-700 text-white"
+            : "bg-primary hover:bg-primary/90"
         }`}
       >
         {isRecording ? (

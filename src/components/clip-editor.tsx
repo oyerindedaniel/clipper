@@ -33,6 +33,8 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { DEFAULT_ASPECT_RATIO, DEFAULT_CROP_MODE } from "@/constants/app";
+import { Timeline } from "@/components/timeline";
+import { TimelineSkeleton } from "@/components/timeline-skeleton";
 
 interface ClipEditorProps {
   clip: ClipMarker | null;
@@ -101,6 +103,31 @@ const ClipEditor = ({
     startDrag,
   } = useTextOverlays(videoRef);
 
+  const adjustOverlayBounds = useCallback(() => {
+    const video = videoRef.current;
+    const container = containerRef.current;
+    const trace = traceRef.current;
+
+    if (!video || !container || !trace) return;
+
+    // Force media player client width based on container
+    logger.log("-------container width", container.clientWidth);
+    video.style.width = `${container.clientWidth}px`;
+
+    logger.log("-------after - container width", container.clientWidth);
+
+    const { x, y, width, height } = getVideoBoundingBox(video);
+
+    trace.style.position = "absolute";
+    trace.style.left = `${x}px`;
+    trace.style.top = `${y}px`;
+    trace.style.width = `${width}px`;
+    trace.style.height = `${height}px`;
+    trace.style.backgroundColor = "rgba(255, 0, 0, 0.3)";
+    trace.style.pointerEvents = "none";
+    trace.style.zIndex = "99";
+  }, []);
+
   const loadClipVideo = useCallback(async (): Promise<string | null> => {
     const video = videoRef.current;
     if (!clip || typeof window === "undefined" || !recordingService || !video)
@@ -135,32 +162,17 @@ const ClipEditor = ({
       logger.error("Error loading clip blob:", err);
       return null;
     }
-  }, [clip?.id, selectedConvertAspectRatio, selectedCropMode]);
+  }, [clip?.id]);
 
   useEffect(() => {
     const video = videoRef.current;
     if (!video || !clip) return;
 
-    let objectUrl: string | null = null;
-
     const handleLoadedMetadata = () => {
       setIsVideoLoaded(true);
       setDuration(video.duration * 1000);
 
-      if (traceRef.current) {
-        const { x, y, width, height } = getVideoBoundingBox(video);
-
-        const trace = traceRef.current;
-
-        trace.style.position = "absolute";
-        trace.style.left = `${x}px`;
-        trace.style.top = `${y}px`;
-        trace.style.width = `${width}px`;
-        trace.style.height = `${height}px`;
-        trace.style.backgroundColor = "rgba(255, 0, 0, 0.3)";
-        trace.style.pointerEvents = "none";
-        trace.style.zIndex = "99";
-      }
+      adjustOverlayBounds();
 
       const dimensions = { width: video.videoWidth, height: video.videoHeight };
       onBlobLoaded(clip.id, dimensions);
@@ -199,17 +211,20 @@ const ClipEditor = ({
     video.addEventListener("loadedmetadata", handleLoadedMetadata);
     video.addEventListener("error", handleError);
 
+    window.addEventListener("resize", adjustOverlayBounds);
+
     return () => {
       logger.log("Cleaning up effect");
 
       video.removeEventListener("loadedmetadata", handleLoadedMetadata);
       video.removeEventListener("error", handleError);
+      window.removeEventListener("resize", adjustOverlayBounds);
 
       if (currentObjectUrl) {
         URL.revokeObjectURL(currentObjectUrl);
       }
     };
-  }, [clip?.id, loadClipVideo]);
+  }, [clip?.id, loadClipVideo, adjustOverlayBounds]);
 
   const formatTime = (milliseconds: number) => {
     const seconds = Math.floor(milliseconds / 1000);
@@ -318,6 +333,11 @@ const ClipEditor = ({
     loadClipVideo();
   };
 
+  const handleTrim = (startTime: number, endTime: number) => {
+    logger.log("Trimmed video from:", startTime, "to:", endTime);
+    // Dummy function for now, replace with actual trim logic
+  };
+
   useEffect(() => {
     const handleExportProgress = (
       _: IpcRendererEvent,
@@ -362,6 +382,7 @@ const ClipEditor = ({
             </Button>
 
             <Button
+              onClick={handleExport}
               disabled={!clip || isExporting}
               className="flex items-center space-x-2 px-3 py-1.5 text-xs"
               variant="default"
@@ -405,10 +426,10 @@ const ClipEditor = ({
                 </MediaPlayer.Controls>
               </MediaPlayer.Root>
 
-              <canvas
+              {/* <canvas
                 ref={canvasRef}
                 className="absolute inset-0 pointer-events-none"
-              />
+              /> */}
 
               <div ref={traceRef} className="absolute" />
 
@@ -780,6 +801,15 @@ const ClipEditor = ({
               )}
             </div>
           </div>
+          {isVideoLoaded ? (
+            <Timeline
+              duration={duration}
+              currentTime={currentTime}
+              onTrim={handleTrim}
+            />
+          ) : (
+            <TimelineSkeleton />
+          )}
         </div>
 
         <AspectRatioSelector
