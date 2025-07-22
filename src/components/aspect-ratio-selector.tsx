@@ -66,11 +66,55 @@ const AspectRatioSelector = ({
   ];
 
   const getPreviewText = () => {
-    if (!convertAspectRatio || convertAspectRatio === "original")
-      return "Original aspect ratio will be preserved";
+    if (!convertAspectRatio || convertAspectRatio === "original") {
+      return (
+        <div className="space-y-1">
+          <p className="text-foreground-default text-sm font-medium">
+            Original Aspect Ratio
+          </p>
+          <p className="text-foreground-subtle text-xs">
+            Your video's original dimensions and aspect ratio will be preserved
+            without any changes.
+          </p>
+        </div>
+      );
+    }
 
+    const ratioLabel = aspectRatios.find(
+      (r) => r.value === convertAspectRatio
+    )?.label;
     const mode = cropModes.find((m) => m.value === cropMode);
-    return `Convert to ${convertAspectRatio} using ${mode?.label.toLowerCase()} method`;
+
+    if (mode) {
+      let description = "";
+      switch (mode.value) {
+        case "letterbox":
+          description = `This method adds black bars (or a solid color) to the top/bottom or sides of your video to fit it into the ${ratioLabel} frame without cropping any content.`;
+          break;
+        case "crop":
+          description = `This method scales your video to fill the ${ratioLabel} frame and then crops out any content that extends beyond the new dimensions. This means some parts of your video might be cut off.`;
+          break;
+        case "stretch":
+          description = `This method stretches or squashes your video to exactly fit the ${ratioLabel} frame. This can cause the video to look distorted.`;
+          break;
+        default:
+          description =
+            "A conversion method will be applied to fit your video into the new aspect ratio.";
+      }
+      return (
+        <div className="space-y-1">
+          <p className="text-foreground-default font-medium">
+            Convert to {ratioLabel}
+          </p>
+          <p className="text-foreground-subtle text-xs">{description}</p>
+        </div>
+      );
+    }
+    return (
+      <p className="text-sm text-foreground-subtle">
+        Select an aspect ratio and conversion method to see a preview.
+      </p>
+    );
   };
 
   return (
@@ -138,11 +182,8 @@ const AspectRatioSelector = ({
           </div>
         )}
 
-        <div className="bg-surface-secondary p-4 rounded-lg border border-gray-700/50 shadow-sm">
-          <h4 className="font-medium text-base text-foreground-default mb-2">
-            Preview
-          </h4>
-          <p className="text-sm text-foreground-subtle">{getPreviewText()}</p>
+        <div className="p-4 rounded-lg border border-gray-700/50 shadow-inner bg-linear-to-r from-surface-secondary to-surface-tertiary">
+          {getPreviewText()}
         </div>
 
         <DialogFooter>
