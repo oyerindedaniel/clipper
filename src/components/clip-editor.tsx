@@ -466,6 +466,16 @@ const ClipEditor = ({
             </div>
           )}
 
+          {isVideoLoaded ? (
+            <Timeline
+              duration={duration}
+              currentTime={currentTime}
+              onTrim={handleTrim}
+            />
+          ) : (
+            <TimelineSkeleton />
+          )}
+
           <div className="flex-1 flex flex-col bg-surface-primary rounded-lg shadow-md overflow-hidden border border-gray-700/50">
             <div className="flex border-b border-gray-700/50">
               {[
@@ -801,15 +811,6 @@ const ClipEditor = ({
               )}
             </div>
           </div>
-          {isVideoLoaded ? (
-            <Timeline
-              duration={duration}
-              currentTime={currentTime}
-              onTrim={handleTrim}
-            />
-          ) : (
-            <TimelineSkeleton />
-          )}
         </div>
 
         <AspectRatioSelector

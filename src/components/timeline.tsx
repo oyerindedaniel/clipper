@@ -4,6 +4,7 @@ import React, {
   useCallback,
   useLayoutEffect,
   useState,
+  startTransition,
 } from "react";
 import { GripVertical } from "lucide-react";
 import {
@@ -13,8 +14,8 @@ import {
 } from "@/components/ui/tooltip";
 
 interface TimelineProps {
-  duration: number; // Total duration in milliseconds
-  currentTime: number; // Current playback time in milliseconds
+  duration: number;
+  currentTime: number;
   onTrim: (startTime: number, endTime: number) => void;
 }
 
@@ -25,13 +26,27 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
   const leftHandleRef = useRef<HTMLDivElement>(null);
   const rightHandleRef = useRef<HTMLDivElement>(null);
   const filledAreaRef = useRef<HTMLDivElement>(null);
-  const tooltipContentRef = useRef<HTMLSpanElement>(null);
+
+  const leftTooltipContentRef = useRef<HTMLSpanElement>(null);
+  const rightTooltipContentRef = useRef<HTMLSpanElement>(null);
 
   const trimValuesRef = useRef({ start: 0, end: duration });
   const pixelsPerMs = useRef(0);
+  const rafIdRef = useRef<number | null>(null);
 
   const [showTooltip, setShowTooltip] = useState(false);
-  const [scrubDuration, setScrubDuration] = useState("");
+  const [activeHandle, setActiveHandle] = useState<"left" | "right" | null>(
+    null
+  );
+
+  function formatDurationDisplay(ms: number): string {
+    const seconds = Math.floor(ms / 1000);
+    const minutes = Math.floor(seconds / 60);
+    const remainingSeconds = seconds % 60;
+    return `${minutes.toString().padStart(2, "0")}:${remainingSeconds
+      .toString()
+      .padStart(2, "0")}`;
+  }
 
   const calculatePixelsPerMs = useCallback(() => {
     if (timelineRef.current) {
@@ -45,44 +60,40 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
     trimValuesRef.current = { start: 0, end: duration };
     calculatePixelsPerMs();
 
-    // Set initial positions to show full timeline
-    if (
-      leftHandleRef.current &&
-      rightHandleRef.current &&
-      filledAreaRef.current
-    ) {
-      const leftPos = 0;
-      const rightPos = duration * pixelsPerMs.current;
+    const leftPos = 0;
+    const rightPos = duration * pixelsPerMs.current;
 
+    if (leftHandleRef.current) {
       leftHandleRef.current.style.left = `${leftPos - HANDLE_OFFSET}px`;
+    }
+    if (rightHandleRef.current) {
       rightHandleRef.current.style.left = `${rightPos - HANDLE_OFFSET}px`;
+    }
+    if (filledAreaRef.current) {
       filledAreaRef.current.style.left = `${leftPos}px`;
       filledAreaRef.current.style.width = `${rightPos - leftPos}px`;
     }
   }, [duration, calculatePixelsPerMs]);
+
+  const updateTooltipContent = (trimStart: number, trimEnd: number) => {
+    if (leftTooltipContentRef.current) {
+      leftTooltipContentRef.current.textContent = `Start: ${formatDurationDisplay(
+        trimStart
+      )}`;
+    }
+
+    if (rightTooltipContentRef.current) {
+      rightTooltipContentRef.current.textContent = `End: ${formatDurationDisplay(
+        trimEnd
+      )}`;
+    }
+  };
 
   useEffect(() => {
     calculatePixelsPerMs();
     window.addEventListener("resize", calculatePixelsPerMs);
     return () => window.removeEventListener("resize", calculatePixelsPerMs);
   }, [duration, calculatePixelsPerMs]);
-
-  const formatDurationDisplay = (ms: number) => {
-    const seconds = Math.floor(ms / 1000);
-    const minutes = Math.floor(seconds / 60);
-    const remainingSeconds = seconds % 60;
-    return `${minutes.toString().padStart(2, "0")}:${remainingSeconds
-      .toString()
-      .padStart(2, "0")}`;
-  };
-
-  const updateTooltipContent = (durationMs: number) => {
-    if (tooltipContentRef.current) {
-      tooltipContentRef.current.textContent = formatDurationDisplay(durationMs);
-
-      console.log({ duration: formatDurationDisplay(durationMs) });
-    }
-  };
 
   const handleDrag = useCallback(
     (event: MouseEvent, handleType: "left" | "right") => {
@@ -92,18 +103,21 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
 
       let isDragging = true;
       setShowTooltip(true);
+      setActiveHandle(handleType);
 
       const onMouseMove = (moveEvent: MouseEvent) => {
         if (!isDragging) return;
 
-        requestAnimationFrame(() => {
+        if (rafIdRef.current) cancelAnimationFrame(rafIdRef.current);
+
+        rafIdRef.current = requestAnimationFrame(() => {
           let newX = moveEvent.clientX - timelineRect.left;
           newX = Math.max(0, Math.min(newX, timelineRect.width));
 
           const newTime = newX / pixelsPerMs.current;
 
           if (handleType === "left") {
-            const maxStartTime = Math.max(0, trimValuesRef.current.end - 1000); // Minimum 1 second clip
+            const maxStartTime = Math.max(0, trimValuesRef.current.end - 1000);
             const newTrimStart = Math.max(0, Math.min(newTime, maxStartTime));
             trimValuesRef.current.start = newTrimStart;
 
@@ -120,12 +134,21 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
               filledAreaRef.current.style.width = `${rightPos - newLeftPos}px`;
             }
 
-            updateTooltipContent(trimValuesRef.current.end - newTrimStart);
+            updateTooltipContent(newTrimStart, trimValuesRef.current.end);
+
+            // startTransition(() => {
+            //   setTooltipValues({
+            //     startText: `Start: ${formatDurationDisplay(newTrimStart)}`,
+            //     endText: `End: ${formatDurationDisplay(
+            //       trimValuesRef.current.end
+            //     )}`,
+            //   });
+            // });
           } else {
             const minEndTime = Math.min(
               duration,
               trimValuesRef.current.start + 1000
-            ); // Minimum 1 second clip
+            );
             const newTrimEnd = Math.min(
               duration,
               Math.max(newTime, minEndTime)
@@ -144,7 +167,16 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
               filledAreaRef.current.style.width = `${newRightPos - leftPos}px`;
             }
 
-            updateTooltipContent(newTrimEnd - trimValuesRef.current.start);
+            updateTooltipContent(trimValuesRef.current.start, newTrimEnd);
+
+            // startTransition(() => {
+            //   setTooltipValues({
+            //     startText: `Start: ${formatDurationDisplay(
+            //       trimValuesRef.current.start
+            //     )}`,
+            //     endText: `End: ${formatDurationDisplay(newTrimEnd)}`,
+            //   });
+            // });
           }
         });
       };
@@ -152,9 +184,14 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
       const onMouseUp = () => {
         isDragging = false;
         setShowTooltip(false);
+
+        if (rafIdRef.current) {
+          cancelAnimationFrame(rafIdRef.current);
+          rafIdRef.current = null;
+        }
+
         document.removeEventListener("mousemove", onMouseMove);
         document.removeEventListener("mouseup", onMouseUp);
-
         onTrim(trimValuesRef.current.start, trimValuesRef.current.end);
       };
 
@@ -165,54 +202,100 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
   );
 
   return (
-    <div className="relative w-full h-12 bg-surface-secondary rounded-lg flex items-center">
-      <div
-        ref={timelineRef}
-        className="absolute inset-0 bg-surface-tertiary"
-      ></div>
+    <div className="relative w-full px-2 py-3">
+      <div className="relative w-full h-8 bg-gradient-to-r from-surface-secondary via-surface-primary to-surface-secondary rounded-xl shadow-inner overflow-hidden">
+        <div
+          ref={timelineRef}
+          className="absolute inset-0 bg-gradient-to-b from-surface-primary to-surface-secondary"
+          style={{
+            backgroundImage: `repeating-linear-gradient(
+              90deg,
+              transparent,
+              transparent 10px,
+              var(--surface-hover) 10px,
+              var(--surface-hover) 11px
+            )`,
+          }}
+        />
 
-      <div ref={filledAreaRef} className="absolute h-full bg-primary/30"></div>
+        <div
+          ref={filledAreaRef}
+          className="absolute h-full bg-gradient-to-r from-primary/40 via-primary/50 to-primary/40 backdrop-blur-[1px] border-y border-border-default/50"
+          style={{
+            boxShadow:
+              "inset 0 1px 2px var(--primary-shadow-color), inset 0 -1px 2px var(--primary-shadow-color)",
+          }}
+        />
 
-      <Tooltip open={showTooltip} delayDuration={0}>
-        <TooltipTrigger asChild>
+        <div
+          ref={leftHandleRef}
+          className={`absolute w-4 h-full cursor-ew-resize z-20 ${
+            activeHandle === "left" ? "scale-110" : "hover:scale-105"
+          }`}
+          onMouseDown={(e) => handleDrag(e.nativeEvent, "left")}
+          style={{ left: `-${HANDLE_OFFSET}px` }}
+        >
+          <div className="absolute inset-0 bg-primary rounded-lg shadow-lg opacity-20 blur-sm" />
+
           <div
-            ref={leftHandleRef}
-            className="absolute w-[calc(var(--handle-offset)*2)] h-full bg-primary cursor-ew-resize rounded-sm shadow-md flex items-center justify-center border border-primary-hover z-10"
-            onMouseDown={(e) => handleDrag(e.nativeEvent, "left")}
-            style={
-              {
-                "--handle-offset": `${HANDLE_OFFSET}px`,
-              } as React.CSSProperties
-            }
+            className={`relative w-full h-full bg-gradient-to-b from-primary to-primary-active rounded-lg shadow-md border border-border-default/50 flex items-center justify-center transition-all duration-200 ${
+              activeHandle === "left"
+                ? "shadow-lg shadow-primary/25"
+                : "hover:shadow-md hover:shadow-primary/20"
+            }`}
           >
-            <GripVertical size={12} className="text-foreground-on-accent" />
-          </div>
-        </TooltipTrigger>
-        <TooltipContent sideOffset={5}>
-          <span ref={tooltipContentRef}>{formatDurationDisplay(duration)}</span>
-        </TooltipContent>
-      </Tooltip>
+            <div className="absolute inset-0 bg-gradient-to-b from-primary/20 to-transparent rounded-lg" />
 
-      <Tooltip open={showTooltip} delayDuration={0}>
-        <TooltipTrigger asChild>
-          <div
-            data-handle-offset={HANDLE_OFFSET}
-            ref={rightHandleRef}
-            className="absolute w-[calc(var(--handle-offset)*2)] h-full bg-primary cursor-ew-resize rounded-sm shadow-md flex items-center justify-center border border-primary-hover z-10"
-            onMouseDown={(e) => handleDrag(e.nativeEvent, "right")}
-            style={
-              {
-                "--handle-offset": `${HANDLE_OFFSET}px`,
-              } as React.CSSProperties
-            }
-          >
-            <GripVertical size={12} className="text-foreground-on-accent" />
+            <GripVertical
+              size={10}
+              className="text-foreground-on-accent drop-shadow-sm relative z-10"
+            />
           </div>
-        </TooltipTrigger>
-        <TooltipContent sideOffset={5}>
-          <span ref={tooltipContentRef}>{formatDurationDisplay(duration)}</span>
-        </TooltipContent>
-      </Tooltip>
+        </div>
+
+        <div
+          ref={rightHandleRef}
+          className={`absolute w-4 h-full cursor-ew-resize z-20 ${
+            activeHandle === "right" ? "scale-110" : "hover:scale-105"
+          }`}
+          onMouseDown={(e) => handleDrag(e.nativeEvent, "right")}
+          style={{ left: `-${HANDLE_OFFSET}px` }}
+        >
+          <div className="absolute inset-0 bg-primary rounded-lg shadow-lg opacity-20 blur-sm" />
+
+          <div
+            className={`relative w-full h-full bg-gradient-to-b from-primary to-primary-active rounded-lg shadow-md border border-border-default/50 flex items-center justify-center transition-all duration-200 ${
+              activeHandle === "right"
+                ? "shadow-lg shadow-primary/25"
+                : "hover:shadow-md hover:shadow-primary/20"
+            }`}
+          >
+            <div className="absolute inset-0 bg-gradient-to-b from-primary/20 to-transparent rounded-lg" />
+
+            <GripVertical
+              size={10}
+              className="text-foreground-on-accent drop-shadow-sm relative z-10"
+            />
+          </div>
+        </div>
+      </div>
+
+      {showTooltip && (
+        <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 z-30">
+          <div className="bg-surface-secondary text-foreground-default px-3 py-1.5 rounded-lg shadow-lg text-xs font-medium whitespace-nowrap">
+            <div className="flex gap-3">
+              <span className="text-primary" ref={leftTooltipContentRef}>
+                {formatDurationDisplay(duration)}
+              </span>
+              <span className="text-foreground-muted">•</span>
+              <span className="text-primary" ref={rightTooltipContentRef}>
+                {formatDurationDisplay(duration)}
+              </span>
+            </div>
+            <div className="absolute top-full left-1/2 transform -translate-x-1/2 w-0 h-0 border-l-4 border-r-4 border-t-4 border-transparent border-t-surface-secondary" />
+          </div>
+        </div>
+      )}
     </div>
   );
 };

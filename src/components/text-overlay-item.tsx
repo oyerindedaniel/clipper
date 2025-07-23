@@ -259,43 +259,6 @@ const TextOverlayItem = ({
               />
             </div>
           </div>
-
-          <div className="grid grid-cols-2 gap-2">
-            <div>
-              <label className="block text-xs text-foreground-subtle mb-1">
-                Start Time (s)
-              </label>
-              <Input
-                type="number"
-                min="0"
-                max={Math.floor(duration / 1000)}
-                value={Math.floor(overlay.startTime / 1000)}
-                onChange={(e) =>
-                  updateTextOverlay(overlay.id, {
-                    startTime: parseInt(e.target.value) * 1000,
-                  })
-                }
-                className="w-full px-2 py-1 text-xs"
-              />
-            </div>
-            <div>
-              <label className="block text-xs text-foreground-subtle mb-1">
-                End Time (s)
-              </label>
-              <Input
-                type="number"
-                min="0"
-                max={Math.floor(duration / 1000)}
-                value={Math.floor(overlay.endTime / 1000)}
-                onChange={(e) =>
-                  updateTextOverlay(overlay.id, {
-                    endTime: parseInt(e.target.value) * 1000,
-                  })
-                }
-                className="w-full px-2 py-1 text-xs"
-              />
-            </div>
-          </div>
         </div>
       )}
     </div>
