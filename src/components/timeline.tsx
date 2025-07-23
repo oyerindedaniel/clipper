@@ -4,20 +4,15 @@ import React, {
   useCallback,
   useLayoutEffect,
   useState,
-  startTransition,
 } from "react";
 import { GripVertical } from "lucide-react";
-import {
-  Tooltip,
-  TooltipContent,
-  TooltipTrigger,
-} from "@/components/ui/tooltip";
 
 interface TimelineProps {
   duration: number;
-  currentTime: number;
   onTrim: (startTime: number, endTime: number) => void;
 }
+
+type Dir = "left" | "right";
 
 const HANDLE_OFFSET = 8;
 
@@ -35,9 +30,7 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
   const rafIdRef = useRef<number | null>(null);
 
   const [showTooltip, setShowTooltip] = useState(false);
-  const [activeHandle, setActiveHandle] = useState<"left" | "right" | null>(
-    null
-  );
+  const [activeHandle, setActiveHandle] = useState<Dir | null>(null);
 
   function formatDurationDisplay(ms: number): string {
     const seconds = Math.floor(ms / 1000);
@@ -96,7 +89,7 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
   }, [duration, calculatePixelsPerMs]);
 
   const handleDrag = useCallback(
-    (event: MouseEvent, handleType: "left" | "right") => {
+    (event: MouseEvent, handleType: Dir) => {
       event.preventDefault();
       const timelineRect = timelineRef.current?.getBoundingClientRect();
       if (!timelineRect) return;
@@ -135,15 +128,6 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
             }
 
             updateTooltipContent(newTrimStart, trimValuesRef.current.end);
-
-            // startTransition(() => {
-            //   setTooltipValues({
-            //     startText: `Start: ${formatDurationDisplay(newTrimStart)}`,
-            //     endText: `End: ${formatDurationDisplay(
-            //       trimValuesRef.current.end
-            //     )}`,
-            //   });
-            // });
           } else {
             const minEndTime = Math.min(
               duration,
@@ -168,15 +152,6 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
             }
 
             updateTooltipContent(trimValuesRef.current.start, newTrimEnd);
-
-            // startTransition(() => {
-            //   setTooltipValues({
-            //     startText: `Start: ${formatDurationDisplay(
-            //       trimValuesRef.current.start
-            //     )}`,
-            //     endText: `End: ${formatDurationDisplay(newTrimEnd)}`,
-            //   });
-            // });
           }
         });
       };
@@ -202,7 +177,10 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
   );
 
   return (
-    <div className="relative w-full px-2 py-3">
+    <div
+      className="relative w-full px-2 py-3"
+      style={{ "--handle-offset": `${HANDLE_OFFSET}px` } as React.CSSProperties}
+    >
       <div className="relative w-full h-8 bg-gradient-to-r from-surface-secondary via-surface-primary to-surface-secondary rounded-xl shadow-inner overflow-hidden">
         <div
           ref={timelineRef}
@@ -229,11 +207,10 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
 
         <div
           ref={leftHandleRef}
-          className={`absolute w-4 h-full cursor-ew-resize z-20 ${
+          className={`absolute w-[calc(var(--handle-offset)*2)] -left-[var(--handle-offset)] h-full cursor-ew-resize z-20 ${
             activeHandle === "left" ? "scale-110" : "hover:scale-105"
           }`}
           onMouseDown={(e) => handleDrag(e.nativeEvent, "left")}
-          style={{ left: `-${HANDLE_OFFSET}px` }}
         >
           <div className="absolute inset-0 bg-primary rounded-lg shadow-lg opacity-20 blur-sm" />
 
@@ -255,11 +232,10 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
 
         <div
           ref={rightHandleRef}
-          className={`absolute w-4 h-full cursor-ew-resize z-20 ${
+          className={`absolute w-[calc(var(--handle-offset)*2)] -left-[var(--handle-offset)] h-full cursor-ew-resize z-20 ${
             activeHandle === "right" ? "scale-110" : "hover:scale-105"
           }`}
           onMouseDown={(e) => handleDrag(e.nativeEvent, "right")}
-          style={{ left: `-${HANDLE_OFFSET}px` }}
         >
           <div className="absolute inset-0 bg-primary rounded-lg shadow-lg opacity-20 blur-sm" />
 

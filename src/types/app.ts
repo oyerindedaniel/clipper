@@ -1,3 +1,5 @@
+import { CSSProperties } from "react";
+
 /**
  * Represents a marked clip segment in the recording.
  */
@@ -10,11 +12,21 @@ export interface ClipMarker {
   bufferFile: string;
 }
 
-export interface TextOverlay {
+type OverlappingStyleProps =
+  | "color"
+  | "opacity"
+  | "fontFamily"
+  | "fontSize"
+  | "letterSpacing"
+  | "textAlign"
+  | "backgroundColor";
+
+export interface TextOverlay
+  extends Partial<Omit<CSSProperties, OverlappingStyleProps>> {
   id: string;
   text: string;
-  x: number; // Not for positioning for export 0 -> 1
-  y: number; // Not for positioning for export 0 -> 1
+  x: number; // Normalized 0–1 for export
+  y: number; // Normalized 0–1 for export
   startTime: number;
   endTime: number;
   fontSize: number;
@@ -102,6 +114,16 @@ export interface RecordedChunk {
   timestamp: number;
 }
 
+export interface ClipMetadata {
+  aspectRatio: string;
+  cropMode: CropMode;
+  dimensions: {
+    width: number;
+    height: number;
+  };
+}
+
+// TODO: Use discriminated union for the response types
 /**
  * Base structure for all IPC response payloads.
  */
@@ -133,4 +155,26 @@ export interface MarkClipResponse extends BaseResponse {
  */
 export interface ExportClipResponse extends BaseResponse {
   blob?: ArrayBuffer;
+  metadata?: ClipMetadata | null;
 }
+
+export interface FontDefinition {
+  family: string;
+  weight?: FontWeight;
+  style?: FontStyle;
+  path: string;
+}
+
+export type FontWeight =
+  | "100"
+  | "200"
+  | "300"
+  | "400"
+  | "500"
+  | "600"
+  | "700"
+  | "800"
+  | "900"
+  | "normal";
+
+export type FontStyle = "normal" | "italic" | "oblique";

@@ -11,7 +11,7 @@ import StreamViewer from "@/components/stream-viewer";
 import RecordingControls from "@/components/recording-controls";
 import ClipEditor from "@/components/clip-editor";
 import ClipList from "../components/clip-list";
-import { ClipMarker, RecordingStartedInfo } from "@/types/app";
+import { ClipMarker, CropMode, RecordingStartedInfo } from "@/types/app";
 import { IpcRendererEvent } from "electron";
 import { normalizeError } from "@/utils/error-utils";
 import { toast } from "sonner";
@@ -20,6 +20,8 @@ import logger from "@/utils/logger";
 import { waitUntilBufferCatchesUp } from "@/utils/app";
 import { Button } from "@/components/ui/button";
 import { Tv } from "lucide-react";
+import { DEFAULT_ASPECT_RATIO, DEFAULT_CROP_MODE } from "@/constants/app";
+import { ClipMetadata } from "@/types/app";
 
 type TabKey = "stream" | "clips" | "editor";
 
@@ -33,13 +35,6 @@ export default function Home() {
   );
   const [currentStream, setCurrentStream] =
     useState<RecordingStartedInfo | null>(null);
-
-  const cachedBlobsRef = useRef<
-    Map<string, { dimensions: { width: number; height: number } }>
-  >(new Map());
-
-  const [exportAspectRatio, setExportAspectRatio] = useState<string>("");
-  const [exportCropMode, setExportCropMode] = useState<string>("letterbox");
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.electronAPI) {
@@ -145,47 +140,6 @@ export default function Home() {
         }
       );
 
-      window.electronAPI.onRequestExportClip(
-        async (event, { requestId, clipData }) => {
-          try {
-            logger.log("Received export clip request:", {
-              requestId,
-              clipData,
-            });
-
-            const blob = await recordingService.getClipBlob(
-              clipData.startTime,
-              clipData.endTime,
-              {}
-            );
-
-            if (!blob || blob.size === 0) {
-              window.electronAPI.sendExportClipResponse({
-                requestId,
-                success: false,
-                error: "No clip data found for the specified time range",
-              });
-              return;
-            }
-
-            const arrayBuffer = await blob.arrayBuffer();
-
-            window.electronAPI.sendExportClipResponse({
-              requestId,
-              success: true,
-              blob: arrayBuffer,
-            });
-          } catch (error) {
-            logger.error("Failed to export clip:", error);
-            window.electronAPI.sendExportClipResponse({
-              requestId,
-              success: false,
-              error: error instanceof Error ? error.message : "Unknown error",
-            });
-          }
-        }
-      );
-
       // Existing listeners for UI updates
       window.electronAPI.onRecordingStarted(
         (event, data: RecordingStartedInfo) => {
@@ -270,29 +224,6 @@ export default function Home() {
       });
     },
     [setActiveTab]
-  );
-
-  const handleBlobLoaded = useCallback(
-    (clipId: string, dimensions: { width: number; height: number }) => {
-      cachedBlobsRef.current.set(clipId, { dimensions });
-      logger.log("Cached blob for clip:", {
-        clipId,
-        dimensions,
-      });
-    },
-    []
-  );
-
-  const handleExportSettingsChange = useCallback(
-    (convertAspectRatio: string, cropMode: string) => {
-      setExportAspectRatio(convertAspectRatio);
-      setExportCropMode(cropMode);
-      logger.log("Export settings updated in Page.tsx", {
-        convertAspectRatio,
-        cropMode,
-      });
-    },
-    []
   );
 
   return (
@@ -380,13 +311,7 @@ export default function Home() {
           />
         )}
 
-        {activeTab === "editor" && (
-          <ClipEditor
-            clip={selectedClip}
-            onBlobLoaded={handleBlobLoaded}
-            onExportSettingsChange={handleExportSettingsChange}
-          />
-        )}
+        {activeTab === "editor" && <ClipEditor clip={selectedClip} />}
       </main>
 
       <div className="fixed z-20 bottom-0 left-0 right-0 bg-surface-secondary border-t border-gray-700/50 px-4 py-2">

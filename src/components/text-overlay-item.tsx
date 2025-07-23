@@ -13,6 +13,7 @@ import {
 import { TextOverlay } from "@/types/app";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
@@ -25,7 +26,6 @@ interface TextOverlayItemProps {
   overlay: TextOverlay;
   selectedOverlay: string | null;
   duration: number;
-  currentTime: number;
   updateTextOverlay: (id: string, updates: Partial<TextOverlay>) => void;
   deleteTextOverlay: (id: string) => void;
 }
@@ -34,7 +34,6 @@ const TextOverlayItem = ({
   overlay,
   selectedOverlay,
   duration,
-  currentTime,
   updateTextOverlay,
   deleteTextOverlay,
 }: TextOverlayItemProps) => {
@@ -99,10 +98,10 @@ const TextOverlayItem = ({
                     endTime: duration,
                   });
                 } else {
-                  updateTextOverlay(overlay.id, {
-                    startTime: currentTime,
-                    endTime: currentTime + 5000,
-                  });
+                  // updateTextOverlay(overlay.id, {
+                  //   startTime: currentTime,
+                  //   endTime: currentTime + 5000,
+                  // });
                 }
               }}
             >
@@ -110,7 +109,7 @@ const TextOverlayItem = ({
                 <SelectValue placeholder="Select display type" />
               </SelectTrigger>
               <SelectContent>
-                <SelectItem value="timed">Timed (Subtitle-like)</SelectItem>
+                {/* <SelectItem value="timed">Timed (Subtitle-like)</SelectItem> */}
                 <SelectItem value="persistent">
                   Persistent (Always visible)
                 </SelectItem>
@@ -123,35 +122,30 @@ const TextOverlayItem = ({
               <label className="block text-xs text-foreground-subtle mb-1">
                 Font Size
               </label>
-              <Input
-                type="range"
-                min="12"
-                max="120"
-                value={overlay.fontSize}
-                onChange={(e) =>
-                  updateTextOverlay(overlay.id, {
-                    fontSize: parseInt(e.target.value),
-                  })
-                }
-                className="w-full h-7"
+              <Slider
+                min={12}
+                max={120}
+                step={1}
+                value={[overlay.fontSize]}
+                onValueChange={([value]) => {
+                  updateTextOverlay(overlay.id, { fontSize: value });
+                }}
+                className="w-full"
               />
             </div>
             <div>
               <label className="block text-xs text-foreground-subtle mb-1">
                 Opacity
               </label>
-              <Input
-                type="range"
-                min="0"
-                max="1"
-                step="0.1"
-                value={overlay.opacity}
-                onChange={(e) =>
-                  updateTextOverlay(overlay.id, {
-                    opacity: parseFloat(e.target.value),
-                  })
-                }
-                className="w-full h-7"
+              <Slider
+                min={0}
+                max={1}
+                step={0.01}
+                value={[overlay.opacity]}
+                onValueChange={([value]) => {
+                  updateTextOverlay(overlay.id, { opacity: value });
+                }}
+                className="w-full"
               />
             </div>
           </div>

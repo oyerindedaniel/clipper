@@ -233,7 +233,7 @@ export default function StreamViewer({
                           alt={source.name}
                           className="w-full h-40 object-cover rounded-sm mb-2 border border-gray-700/50 group-hover:border-primary-hover transition-colors shadow-xs"
                         />
-                        <p className="text-foreground-default text-xs font-semibold truncate">
+                        <p className="text-foreground-default text-xs font-semibold truncate w-[80%] mx-auto">
                           {source.name}
                         </p>
                       </button>

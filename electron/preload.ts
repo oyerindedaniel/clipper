@@ -72,7 +72,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   onRequestExportClip: (
     callback: (
       _: IpcRendererEvent,
-      data: { requestId: string; clipData: ClipExportData }
+      data: {
+        requestId: string;
+        clipData: ClipExportData;
+      }
     ) => void
   ): void => {
     ipcRenderer.on("request-export-clip", callback);

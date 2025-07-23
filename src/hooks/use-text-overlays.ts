@@ -3,6 +3,19 @@ import { TextOverlay } from "@/types/app";
 import { getOverlayNormalizedCoords } from "@/utils/app";
 import logger from "@/utils/logger";
 
+interface DragState {
+  isDragging: boolean;
+  startX: number;
+  startY: number;
+  element: HTMLElement | null;
+  offsetX: number;
+  offsetY: number;
+  overlayId: string | null;
+  rafId: number | null;
+  finalLeft: number;
+  finalTop: number;
+}
+
 /**
  * Hook for managing and dragging text overlays over a canvas.
  */
@@ -13,16 +26,7 @@ export const useTextOverlays = (
   const [selectedOverlay, setSelectedOverlay] = useState<string | null>(null);
 
   const containerRef = useRef<HTMLDivElement>(null);
-  const dragRef = useRef<{
-    isDragging: boolean;
-    startX: number;
-    startY: number;
-    element: HTMLElement | null;
-    offsetX: number;
-    offsetY: number;
-    overlayId: string | null;
-    rafId: number | null;
-  }>({
+  const dragRef = useRef<DragState>({
     isDragging: false,
     startX: 0,
     startY: 0,
@@ -31,15 +35,32 @@ export const useTextOverlays = (
     offsetY: 0,
     overlayId: null,
     rafId: null,
+    finalLeft: 0,
+    finalTop: 0,
   });
 
   const addTextOverlay = useCallback(
     (currentTime: number = 0, duration?: number) => {
+      const video = videoRef.current;
+
+      if (!video) {
+        logger.warn(
+          "⚠️ Cannot add text overlay: video element is not available."
+        );
+        return;
+      }
+
+      const videoWidth = video.videoWidth;
+
+      console.log("---------video width", videoWidth);
+
+      logger.log("🔍 Adding text overlay", { currentTime, duration });
+
       const newOverlay: TextOverlay = {
         id: `text_${Date.now()}`,
         text: "New Text",
         startTime: currentTime,
-        endTime: currentTime + 5000,
+        endTime: duration ?? Infinity,
         x: 0,
         y: 0,
         fontSize: 24,
@@ -53,6 +74,7 @@ export const useTextOverlays = (
         underline: false,
         alignment: "center",
         visible: true,
+        maxWidth: `${videoWidth * 0.7}px`,
       };
 
       setTextOverlays((prev) => [...prev, newOverlay]);
@@ -111,6 +133,8 @@ export const useTextOverlays = (
       offsetY: rect.top - containerRect.top,
       overlayId,
       rafId: null,
+      finalLeft: 0,
+      finalTop: 0,
     };
 
     setSelectedOverlay(overlayId);
@@ -144,14 +168,8 @@ export const useTextOverlays = (
         Math.min(containerRect.height - elementHeight, newTop)
       );
 
-      if (videoRef && videoRef.current) {
-        const { x, y } = getOverlayNormalizedCoords(videoRef.current, {
-          overlayX: newLeft,
-          overlayY: newTop,
-        });
-
-        logger.log("[Normalized Overlay Position]", { x, y });
-      }
+      drag.finalLeft = newLeft;
+      drag.finalTop = newTop;
 
       if (drag.rafId) {
         cancelAnimationFrame(drag.rafId);
@@ -165,9 +183,27 @@ export const useTextOverlays = (
     };
 
     const onMouseUp = () => {
-      dragRef.current.isDragging = false;
-      dragRef.current.element = null;
-      dragRef.current.overlayId = null;
+      const drag = dragRef.current;
+      drag.isDragging = false;
+
+      if (videoRef?.current && drag.overlayId) {
+        const { x, y } = getOverlayNormalizedCoords(videoRef.current, {
+          overlayX: drag.finalLeft,
+          overlayY: drag.finalTop,
+        });
+
+        updateTextOverlay(drag.overlayId, {
+          x,
+          y,
+        });
+
+        logger.log("[Normalized Overlay Position]", { x, y });
+      }
+
+      drag.element = null;
+      drag.overlayId = null;
+      drag.finalLeft = 0;
+      drag.finalTop = 0;
 
       document.removeEventListener("mousemove", onMouseMove);
       document.removeEventListener("mouseup", onMouseUp);

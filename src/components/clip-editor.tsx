@@ -16,6 +16,8 @@ import {
   ExportSettings,
   ExportProgressInfo,
   CropMode,
+  ClipExportData,
+  ClipMetadata,
 } from "@/types/app";
 import { IpcRendererEvent } from "electron";
 import { toast } from "sonner";
@@ -38,24 +40,11 @@ import { TimelineSkeleton } from "@/components/timeline-skeleton";
 
 interface ClipEditorProps {
   clip: ClipMarker | null;
-  onBlobLoaded: (
-    clipId: string,
-    dimensions: { width: number; height: number }
-  ) => void;
-  onExportSettingsChange: (
-    convertAspectRatio: string,
-    cropMode: string
-  ) => void;
 }
 
 type ClipToolType = "clips" | "text" | "audio" | "export";
 
-const ClipEditor = ({
-  clip,
-  onBlobLoaded,
-  onExportSettingsChange,
-}: ClipEditorProps) => {
-  const [currentTime, setCurrentTime] = useState(0);
+const ClipEditor = ({ clip }: ClipEditorProps) => {
   const [duration, setDuration] = useState(0);
 
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
@@ -67,7 +56,6 @@ const ClipEditor = ({
     bitrate: 8000,
   });
   const [isExporting, setIsExporting] = useState(false);
-  const [exportProgress, setExportProgress] = useState(0);
   const [activeTab, setActiveTab] = useState<ClipToolType>("clips");
   const [zoomLevel, setZoomLevel] = useState(1);
 
@@ -81,8 +69,11 @@ const ClipEditor = ({
   const selectedCropMode = useRef<CropMode>(DEFAULT_CROP_MODE);
 
   const videoRef = useRef<HTMLVideoElement>(null);
-  const canvasRef = useRef<HTMLCanvasElement>(null);
   const audioFileRef = useRef<HTMLInputElement>(null);
+
+  const trimRef = useRef<{ start: number; end: number }>({ start: 0, end: 0 });
+
+  const clipMetaDataRef = useRef<ClipMetadata | null>(null);
 
   const traceRef = useRef<HTMLDivElement>(null);
 
@@ -93,11 +84,9 @@ const ClipEditor = ({
   const {
     textOverlays,
     selectedOverlay,
-    setSelectedOverlay,
     addTextOverlay,
     updateTextOverlay,
     deleteTextOverlay,
-    getTimeBasedOverlays,
     getAllVisibleOverlays,
     containerRef,
     startDrag,
@@ -111,10 +100,7 @@ const ClipEditor = ({
     if (!video || !container || !trace) return;
 
     // Force media player client width based on container
-    logger.log("-------container width", container.clientWidth);
     video.style.width = `${container.clientWidth}px`;
-
-    logger.log("-------after - container width", container.clientWidth);
 
     const { x, y, width, height } = getVideoBoundingBox(video);
 
@@ -174,8 +160,14 @@ const ClipEditor = ({
 
       adjustOverlayBounds();
 
-      const dimensions = { width: video.videoWidth, height: video.videoHeight };
-      onBlobLoaded(clip.id, dimensions);
+      clipMetaDataRef.current = {
+        aspectRatio: selectedConvertAspectRatio.current,
+        cropMode: selectedCropMode.current,
+        dimensions: {
+          width: video.videoWidth,
+          height: video.videoHeight,
+        },
+      };
 
       logger.log("📹 Video metadata loaded:", {
         durationMs: video.duration * 1000,
@@ -279,50 +271,57 @@ const ClipEditor = ({
     if (!clip) return;
 
     setIsExporting(true);
-    setExportProgress(0);
 
-    try {
-      const outputPath = await window.electronAPI.selectOutputFolder();
-      if (!outputPath) {
+    const promise = new Promise<string>(async (resolve, reject) => {
+      try {
+        const outputPath = await window.electronAPI.selectOutputFolder();
+        if (!outputPath) {
+          setIsExporting(false);
+          return reject(new Error("No output path selected"));
+        }
+
+        const exportData: ClipExportData = {
+          id: clip.id,
+          startTime: trimRef.current.start || 0,
+          endTime: trimRef.current.end || duration,
+          outputName: `${clip.id}`,
+          outputPath,
+          textOverlays: textOverlays.filter((overlay) => overlay.visible),
+          audioTracks: audioTracks.filter((track) => track.visible),
+          exportSettings: {
+            ...exportSettings,
+            convertAspectRatio: selectedConvertAspectRatio.current || undefined,
+            cropMode: selectedCropMode.current,
+          },
+        };
+
+        const result = await window.electronAPI.exportClip(exportData);
+
+        if (result.success) {
+          closeAspectRatioModal();
+          resolve(result.outputPath);
+        } else {
+          reject(new Error("Export failed"));
+        }
+      } catch (error) {
+        logger.error("Export error:", error);
+        reject(error);
+      } finally {
         setIsExporting(false);
-        return;
       }
+    });
 
-      const exportData = {
-        id: clip.id,
-        startTime: 0,
-        endTime: duration,
-        outputName: `${clip.id}`,
-        outputPath,
-        textOverlays: textOverlays.filter((overlay) => overlay.visible),
-        audioTracks: audioTracks.filter((track) => track.visible),
-        exportSettings: {
-          ...exportSettings,
-          convertAspectRatio: selectedConvertAspectRatio.current || undefined,
-          cropMode: selectedCropMode.current,
-        },
-      };
-
-      const result = await window.electronAPI.exportClip(exportData);
-
-      if (result.success) {
-        toast.success(`Clip exported successfully to: ${result.outputPath}`);
-        closeAspectRatioModal();
-        onExportSettingsChange(
-          selectedConvertAspectRatio.current,
-          selectedCropMode.current
-        );
-      } else {
-        toast.error("Export failed");
-      }
-    } catch (error) {
-      logger.error("Export error:", error);
-      const normalizedError = normalizeError(error);
-      toast.error(`Export failed: ${normalizedError.message}`);
-    } finally {
-      setIsExporting(false);
-      setExportProgress(0);
-    }
+    toast.promise(promise, {
+      loading: "Exporting clip...",
+      success: (outputPath) => {
+        return `Clip exported successfully to: ${outputPath}`;
+      },
+      error: (err) => {
+        const normalizedError = normalizeError(err);
+        return `Export failed: ${normalizedError.message}`;
+      },
+      id: clip.id,
+    });
   };
 
   const handleSettingsApplied = (aspectRatio: string, cropMode: string) => {
@@ -334,36 +333,96 @@ const ClipEditor = ({
   };
 
   const handleTrim = (startTime: number, endTime: number) => {
+    trimRef.current = { start: startTime, end: endTime };
+
     logger.log("Trimmed video from:", startTime, "to:", endTime);
-    // Dummy function for now, replace with actual trim logic
   };
 
   useEffect(() => {
-    const handleExportProgress = (
-      _: IpcRendererEvent,
-      progressInfo: ExportProgressInfo
-    ) => {
-      if (progressInfo.clipId === clip?.id) {
-        // Parse FFmpeg progress (time format: 00:00:00.00)
-        const timeMatch = progressInfo.progress.match(
-          /(\d+):(\d+):(\d+)\.(\d+)/
-        );
-        if (timeMatch) {
-          const [, hours, minutes, seconds, centiseconds] = timeMatch;
-          const progressTime =
-            (parseInt(hours) * 3600 +
-              parseInt(minutes) * 60 +
-              parseInt(seconds)) *
-              1000 +
-            parseInt(centiseconds) * 10;
-          const totalTime = duration;
-          setExportProgress(Math.min(100, (progressTime / totalTime) * 100));
+    window.electronAPI.onRequestExportClip(
+      async (event, { requestId, clipData }) => {
+        try {
+          logger.log("Received export clip request:", {
+            requestId,
+            clipData,
+            cachedClipMetadata: clipMetaDataRef.current,
+          });
+
+          const blob = await recordingService.getClipBlob(
+            clipData.startTime,
+            clipData.endTime,
+            {
+              convertAspectRatio:
+                clipMetaDataRef.current?.aspectRatio ?? DEFAULT_ASPECT_RATIO,
+              cropMode: clipMetaDataRef.current?.cropMode ?? DEFAULT_CROP_MODE,
+            }
+          );
+
+          if (!blob || blob.size === 0) {
+            window.electronAPI.sendExportClipResponse({
+              requestId,
+              success: false,
+              error: "No clip data found for the specified time range",
+            });
+            return;
+          }
+
+          const arrayBuffer = await blob.arrayBuffer();
+
+          window.electronAPI.sendExportClipResponse({
+            requestId,
+            success: true,
+            blob: arrayBuffer,
+            metadata: clipMetaDataRef.current,
+          });
+        } catch (error) {
+          logger.error("Failed to export clip:", error);
+          window.electronAPI.sendExportClipResponse({
+            requestId,
+            success: false,
+            error: error instanceof Error ? error.message : "Unknown error",
+          });
         }
       }
-    };
+    );
 
-    window.electronAPI.onExportProgress(handleExportProgress);
-    return () => window.electronAPI.removeAllListeners("export-progress");
+    window.electronAPI.onExportProgress(
+      (_: IpcRendererEvent, progressInfo: ExportProgressInfo) => {
+        if (progressInfo.clipId === clip?.id) {
+          // Parse FFmpeg progress (time format: 00:00:00.00)
+          const timeMatch = progressInfo.progress.match(
+            /(\d+):(\d+):(\d+)\.(\d+)/
+          );
+          if (timeMatch) {
+            const [, hours, minutes, seconds, centiseconds] = timeMatch;
+            const progressTime =
+              (parseInt(hours) * 3600 +
+                parseInt(minutes) * 60 +
+                parseInt(seconds)) *
+                1000 +
+              parseInt(centiseconds) * 10;
+            const totalTime = duration;
+            const progressPercentage = Math.min(
+              100,
+              (progressTime / totalTime) * 100
+            );
+            toast.loading(
+              `Exporting clip... ${progressPercentage.toFixed(2)}%`,
+              {
+                id: clip.id,
+              }
+            );
+          }
+        }
+      }
+    );
+
+    return () => {
+      if (typeof window !== "undefined" && window.electronAPI) {
+        window.electronAPI.removeAllListeners("request-export-clip");
+        window.electronAPI.removeAllListeners("export-progress");
+      }
+    };
   }, [clip?.id]);
 
   return (
@@ -426,14 +485,9 @@ const ClipEditor = ({
                 </MediaPlayer.Controls>
               </MediaPlayer.Root>
 
-              {/* <canvas
-                ref={canvasRef}
-                className="absolute inset-0 pointer-events-none"
-              /> */}
-
               <div ref={traceRef} className="absolute" />
 
-              {getTimeBasedOverlays(currentTime).map((overlay) => (
+              {/* {getTimeBasedOverlays(currentTime).map((overlay) => (
                 <DraggableTextOverlay
                   key={overlay.id}
                   overlay={overlay}
@@ -444,7 +498,7 @@ const ClipEditor = ({
                     startDrag(overlay.id, e);
                   }}
                 />
-              ))}
+              ))} */}
 
               {getAllVisibleOverlays()
                 .filter(
@@ -467,11 +521,7 @@ const ClipEditor = ({
           )}
 
           {isVideoLoaded ? (
-            <Timeline
-              duration={duration}
-              currentTime={currentTime}
-              onTrim={handleTrim}
-            />
+            <Timeline duration={duration} onTrim={handleTrim} />
           ) : (
             <TimelineSkeleton />
           )}
@@ -542,7 +592,6 @@ const ClipEditor = ({
                       overlay={textOverlay}
                       selectedOverlay={selectedOverlay}
                       duration={duration}
-                      currentTime={currentTime}
                       updateTextOverlay={updateTextOverlay}
                       deleteTextOverlay={deleteTextOverlay}
                     />
@@ -787,25 +836,6 @@ const ClipEditor = ({
                         className="px-3 py-1.5 text-xs"
                       />
                     </div>
-
-                    {isExporting && (
-                      <div className="mt-4 p-3 bg-surface-secondary rounded-lg">
-                        <div className="flex items-center justify-between mb-2">
-                          <span className="text-xs text-foreground-default">
-                            Exporting...
-                          </span>
-                          <span className="text-xs text-foreground-default">
-                            {Math.round(exportProgress)}%
-                          </span>
-                        </div>
-                        <div className="w-full bg-border-subtle rounded-full h-1.5">
-                          <div
-                            className="bg-primary h-1.5 rounded-full transition-all duration-300"
-                            style={{ width: `${exportProgress}%` }}
-                          />
-                        </div>
-                      </div>
-                    )}
                   </div>
                 </div>
               )}

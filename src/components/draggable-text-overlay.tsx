@@ -20,26 +20,29 @@ export const DraggableTextOverlay = ({
       className={`absolute select-none cursor-move ${
         isSelected ? "ring-2 ring-primary" : ""
       }`}
-      style={{
-        transform: "translate3d(0px, 0px, 0)",
-        willChange: "transform",
-        left: 0,
-        top: 0,
-        fontSize: `${overlay.fontSize}px`,
-        fontFamily: overlay.fontFamily,
-        letterSpacing: overlay.letterSpacing,
-        color: overlay.color,
-        backgroundColor: overlay.backgroundColor,
-        opacity: overlay.opacity,
-        fontWeight: overlay.bold ? "bold" : "normal",
-        fontStyle: overlay.italic ? "italic" : "normal",
-        textDecoration: overlay.underline ? "underline" : "none",
-        textAlign: overlay.alignment,
-        padding: "8px 12px",
-        borderRadius: "4px",
-        zIndex: isSelected ? 10 : 1,
-        pointerEvents: "auto",
-      }}
+      style={
+        {
+          transform: "translate3d(0px, 0px, 0)",
+          willChange: "transform",
+          left: 0,
+          top: 0,
+          fontSize: `${overlay.fontSize}px`,
+          fontFamily: overlay.fontFamily,
+          letterSpacing: overlay.letterSpacing,
+          color: overlay.color,
+          backgroundColor: overlay.backgroundColor,
+          opacity: overlay.opacity,
+          fontWeight: overlay.bold ? "bold" : "normal",
+          fontStyle: overlay.italic ? "italic" : "normal",
+          textDecoration: overlay.underline ? "underline" : "none",
+          textAlign: overlay.alignment,
+          maxWidth: overlay.maxWidth,
+          padding: "8px 12px",
+          borderRadius: "4px",
+          zIndex: isSelected ? 10 : 1,
+          pointerEvents: "auto",
+        } as React.CSSProperties
+      }
       onMouseDown={onMouseDown}
       data-overlay-id={overlay.id}
     >

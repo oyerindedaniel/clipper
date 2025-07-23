@@ -94,8 +94,23 @@ function getOverlayNormalizedCoords(
   return { x, y };
 }
 
+/**
+ * Converts a pixel string like "44px" or "44.44px" to a number.
+ * If input is already a number, it returns it as-is.
+ *
+ * @param value - Pixel value as string or number
+ * @returns Numeric pixel value
+ */
+function parsePixels(value: string | number): number {
+  if (typeof value === "number") return value;
+
+  const parsed = parseFloat(value.replace(/px$/, "").trim());
+  return isNaN(parsed) ? 0 : parsed;
+}
+
 export {
   waitUntilBufferCatchesUp,
   getVideoBoundingBox,
   getOverlayNormalizedCoords,
+  parsePixels,
 };
