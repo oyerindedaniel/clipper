@@ -181,7 +181,7 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
       className="relative w-full px-2 py-3"
       style={{ "--handle-offset": `${HANDLE_OFFSET}px` } as React.CSSProperties}
     >
-      <div className="relative w-full h-8 bg-gradient-to-r from-surface-secondary via-surface-primary to-surface-secondary rounded-xl shadow-inner overflow-hidden">
+      <div className="relative w-full h-8 bg-gradient-to-r from-surface-secondary via-surface-primary to-surface-secondary rounded-xl shadow-inner">
         <div
           ref={timelineRef}
           className="absolute inset-0 bg-gradient-to-b from-surface-primary to-surface-secondary"
@@ -194,7 +194,17 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
               var(--surface-hover) 11px
             )`,
           }}
-        />
+        >
+          {/* {Array.from({ length: Math.floor(duration / 1000) }).map((_, i) => (
+            <div
+              key={i}
+              className="absolute top-0 w-px h-full bg-surface-hover"
+              style={{
+                left: `${(i * 1000 * pixelsPerMs.current).toFixed(2)}px`,
+              }}
+            />
+          ))} */}
+        </div>
 
         <div
           ref={filledAreaRef}
@@ -212,16 +222,16 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
           }`}
           onMouseDown={(e) => handleDrag(e.nativeEvent, "left")}
         >
-          <div className="absolute inset-0 bg-primary rounded-lg shadow-lg opacity-20 blur-sm" />
+          <div className="absolute inset-0 bg-primary rounded-xl shadow-lg opacity-20 blur-sm" />
 
           <div
-            className={`relative w-full h-full bg-gradient-to-b from-primary to-primary-active rounded-lg shadow-md border border-border-default/50 flex items-center justify-center transition-all duration-200 ${
+            className={`relative w-full h-full bg-gradient-to-b from-primary to-primary-active rounded-xl shadow-md border border-border-default/50 flex items-center justify-center transition-all duration-200 ${
               activeHandle === "left"
                 ? "shadow-lg shadow-primary/25"
                 : "hover:shadow-md hover:shadow-primary/20"
             }`}
           >
-            <div className="absolute inset-0 bg-gradient-to-b from-primary/20 to-transparent rounded-lg" />
+            <div className="absolute inset-0 bg-gradient-to-b from-primary/20 to-transparent rounded-xl" />
 
             <GripVertical
               size={10}
@@ -237,16 +247,16 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
           }`}
           onMouseDown={(e) => handleDrag(e.nativeEvent, "right")}
         >
-          <div className="absolute inset-0 bg-primary rounded-lg shadow-lg opacity-20 blur-sm" />
+          <div className="absolute inset-0 bg-primary rounded-xl shadow-lg opacity-20 blur-sm" />
 
           <div
-            className={`relative w-full h-full bg-gradient-to-b from-primary to-primary-active rounded-lg shadow-md border border-border-default/50 flex items-center justify-center transition-all duration-200 ${
+            className={`relative w-full h-full bg-gradient-to-b from-primary to-primary-active rounded-xl shadow-md border border-border-default/50 flex items-center justify-center transition-all duration-200 ${
               activeHandle === "right"
                 ? "shadow-lg shadow-primary/25"
                 : "hover:shadow-md hover:shadow-primary/20"
             }`}
           >
-            <div className="absolute inset-0 bg-gradient-to-b from-primary/20 to-transparent rounded-lg" />
+            <div className="absolute inset-0 bg-gradient-to-b from-primary/20 to-transparent rounded-xl" />
 
             <GripVertical
               size={10}
@@ -258,7 +268,7 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
 
       {showTooltip && (
         <div className="absolute -top-6 left-1/2 transform -translate-x-1/2 z-30">
-          <div className="bg-surface-secondary text-foreground-default px-3 py-1.5 rounded-lg shadow-lg text-xs font-medium whitespace-nowrap">
+          <div className="bg-surface-secondary text-foreground-default px-3 py-1.5 rounded-xl shadow-lg text-xs font-medium whitespace-nowrap">
             <div className="flex gap-3">
               <span className="text-primary" ref={leftTooltipContentRef}>
                 {formatDurationDisplay(duration)}

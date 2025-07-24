@@ -10,8 +10,9 @@
     "type-check": "tsc --noEmit",
     "electron:rebuild": "tsx scripts/rebuild-electron.ts",
     "postinstall": "electron-builder install-app-deps",
-    "electron:dev": "cross-env NODE_ENV=development pnpm run electron:compile && concurrently \"cross-env NODE_ENV=development pnpm run dev\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development pnpm exec electron dist/electron/main.js\"",
-    "electron:build": "pnpm run build && pnpm run electron:compile",
+    "copy-fonts": "tsx scripts/copy-fonts.ts",
+    "electron:dev": "cross-env NODE_ENV=development pnpm run electron:compile && pnpm run copy-fonts && concurrently \"cross-env NODE_ENV=development pnpm run dev\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development pnpm exec electron dist/electron/main.js\"",
+    "electron:build": "pnpm run build && pnpm run electron:compile && pnpm run copy-fonts",
     "electron:compile": "tsc --project tsconfig.electron.json",
     "electron:pack": "cross-env ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES=true pnpm run electron:build && electron-builder",
     "electron:dist": "cross-env ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES=true pnpm run electron:build && electron-builder --publish=never",
@@ -47,6 +48,7 @@
     "next-themes": "^0.4.6",
     "p-queue": "^8.1.0",
     "react": "^19.0.0",
+    "react-colorful": "^5.6.1",
     "react-dom": "^19.0.0",
     "sonner": "^2.0.6",
     "tailwind-merge": "^3.3.1",
@@ -63,10 +65,21 @@
     "eslint": "^9",
     "eslint-config-next": "15.3.5",
     "tailwindcss": "^4",
+    "tsx": "^4.20.3",
     "typescript": "^5",
     "wait-on": "^8.0.3"
   },
   "build": {
+    "appId": "com.personal.clipper",
+    "productName": "Clipper",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "dist/**/*",
+      "out/**/*",
+      "node_modules/**/*"
+    ],
     "extraResources": [
       {
         "from": "ffmpeg/",
@@ -74,8 +87,35 @@
         "filter": [
           "**/*"
         ]
+      },
+      {
+        "from": "src/assets/fonts",
+        "to": "assets/fonts",
+        "filter": [
+          "**/*.ttf",
+          "**/*.otf",
+          "**/*.woff",
+          "**/*.woff2"
+        ]
       }
-    ]
+    ],
+    "win": {
+      "target": [
+        {
+          "target": "nsis",
+          "arch": [
+            "x64",
+            "ia32"
+          ]
+        }
+      ]
+    },
+    "mac": {
+      "target": "dmg"
+    },
+    "linux": {
+      "target": "AppImage"
+    }
   },
   "packageManager": "pnpm@9.13.2+sha512.88c9c3864450350e65a33587ab801acf946d7c814ed1134da4a924f6df5a2120fd36b46aab68f7cd1d413149112d53c7db3a4136624cfd00ff1846a0c6cef48a"
 }

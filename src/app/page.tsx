@@ -13,7 +13,13 @@ import recordingService from "@/services/recording-service";
 import logger from "@/utils/logger";
 import { waitUntilBufferCatchesUp } from "@/utils/app";
 import { Button } from "@/components/ui/button";
-import { Tv } from "lucide-react";
+import { Tv, Eraser } from "lucide-react";
+import {
+  Tooltip,
+  TooltipContent,
+  TooltipProvider,
+  TooltipTrigger,
+} from "@/components/ui/tooltip";
 
 type TabKey = "stream" | "clips" | "editor";
 
@@ -204,6 +210,12 @@ export default function Home() {
     }
   };
 
+  const handleClearMemory = () => {
+    recordingService.reset();
+    setClipMarkers([]);
+    toast.success("Memory cleared successfully!");
+  };
+
   const handleEditClip = (clip: ClipMarker) => {
     setSelectedClip(clip);
     startTransition(() => setActiveTab("editor"));
@@ -236,6 +248,23 @@ export default function Home() {
                 onStopRecording={handleStopRecording}
                 recordingStartTime={recordingStartTime}
               />
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      onClick={handleClearMemory}
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                    >
+                      <Eraser size={16} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Clear Memory (Resets recording and clips)</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
             </div>
           </div>
         </div>

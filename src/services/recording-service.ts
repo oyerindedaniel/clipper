@@ -1,5 +1,5 @@
-import { RecordedChunk } from "../types/app";
-import logger from "../utils/logger";
+import { RecordedChunk } from "@/types/app";
+import logger from "@/utils/logger";
 
 /**
  * Handles screen and audio recording, buffering, and clip extraction.

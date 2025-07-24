@@ -326,10 +326,16 @@ class FontManager {
   }
 }
 
+logger.info("🟡 Initializing FontManager and loading bundled fonts...");
+
 const fontManager = FontManager.getInstance();
-const bundledFontsDir = path.join(__dirname, "..", "assets", "fonts");
+const bundledFontsDir = path.join(__dirname, "..", "..", "assets", "fonts");
+
 if (fs.existsSync(bundledFontsDir)) {
   fontManager.loadFontsFromDirectory(bundledFontsDir);
+  logger.info(`✅ Finished loading fonts from: ${bundledFontsDir}`);
+} else {
+  logger.warn(`⚠️ Bundled fonts directory does not exist: ${bundledFontsDir}`);
 }
 
 export default fontManager;

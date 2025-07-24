@@ -8,6 +8,7 @@ import { CustomTooltip } from "./custom-tooltip";
 
 function Slider({
   className,
+  defaultValue,
   value,
   min = 0,
   max = 100,
@@ -29,10 +30,10 @@ function Slider({
   return (
     <SliderPrimitive.Root
       data-slot="slider"
-      value={_values}
+      defaultValue={defaultValue}
+      value={value}
       min={min}
       max={max}
-      step={step}
       onValueChange={onValueChange}
       className={cn(
         "relative flex w-full touch-none items-center select-none data-[disabled]:opacity-50 data-[orientation=vertical]:h-full data-[orientation=vertical]:min-h-44 data-[orientation=vertical]:w-auto data-[orientation=vertical]:flex-col",

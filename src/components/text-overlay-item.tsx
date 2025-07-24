@@ -13,7 +13,6 @@ import {
 import { TextOverlay } from "@/types/app";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
-import { Slider } from "@/components/ui/slider";
 import {
   Select,
   SelectContent,
@@ -21,6 +20,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import { ColorPicker } from "@/components/ui/color-picker";
 
 interface TextOverlayItemProps {
   overlay: TextOverlay;
@@ -29,6 +29,12 @@ interface TextOverlayItemProps {
   updateTextOverlay: (id: string, updates: Partial<TextOverlay>) => void;
   deleteTextOverlay: (id: string) => void;
 }
+
+const fontSizes = Array.from(
+  { length: (72 - 16) / 4 + 1 },
+  (_, i) => 16 + i * 4
+);
+const opacities = Array.from({ length: 10 }, (_, i) => (i + 1) * 0.1);
 
 const TextOverlayItem = ({
   overlay,
@@ -122,31 +128,45 @@ const TextOverlayItem = ({
               <label className="block text-xs text-foreground-subtle mb-1">
                 Font Size
               </label>
-              <Slider
-                min={12}
-                max={120}
-                step={1}
-                value={[overlay.fontSize]}
-                onValueChange={([value]) => {
-                  updateTextOverlay(overlay.id, { fontSize: value });
-                }}
-                className="w-full"
-              />
+              <Select
+                value={String(overlay.fontSize)}
+                onValueChange={(value) =>
+                  updateTextOverlay(overlay.id, { fontSize: parseInt(value) })
+                }
+              >
+                <SelectTrigger className="w-full px-2 py-1 h-auto text-xs">
+                  <SelectValue placeholder="Select font size" />
+                </SelectTrigger>
+                <SelectContent>
+                  {fontSizes.map((size) => (
+                    <SelectItem key={size} value={String(size)}>
+                      {size}px
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
             <div>
               <label className="block text-xs text-foreground-subtle mb-1">
                 Opacity
               </label>
-              <Slider
-                min={0}
-                max={1}
-                step={0.01}
-                value={[overlay.opacity]}
-                onValueChange={([value]) => {
-                  updateTextOverlay(overlay.id, { opacity: value });
-                }}
-                className="w-full"
-              />
+              <Select
+                value={String(overlay.opacity)}
+                onValueChange={(value) =>
+                  updateTextOverlay(overlay.id, { opacity: parseFloat(value) })
+                }
+              >
+                <SelectTrigger className="w-full px-2 py-1 h-auto text-xs">
+                  <SelectValue placeholder="Select opacity" />
+                </SelectTrigger>
+                <SelectContent>
+                  {opacities.map((o) => (
+                    <SelectItem key={o} value={String(o)}>
+                      {(o * 100).toFixed(0)}%
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
             </div>
           </div>
 
@@ -226,30 +246,22 @@ const TextOverlayItem = ({
               <label className="block text-xs text-foreground-subtle mb-1">
                 Text Color
               </label>
-              <Input
-                type="color"
-                value={overlay.color}
-                onChange={(e) =>
-                  updateTextOverlay(overlay.id, {
-                    color: e.target.value,
-                  })
+              <ColorPicker
+                color={overlay.color}
+                onChange={(value) =>
+                  updateTextOverlay(overlay.id, { color: value })
                 }
-                className="w-full h-8 rounded p-0"
               />
             </div>
             <div>
               <label className="block text-xs text-foreground-subtle mb-1">
                 Background
               </label>
-              <Input
-                type="color"
-                value={overlay.backgroundColor}
-                onChange={(e) =>
-                  updateTextOverlay(overlay.id, {
-                    backgroundColor: e.target.value,
-                  })
+              <ColorPicker
+                color={overlay.backgroundColor}
+                onChange={(value) =>
+                  updateTextOverlay(overlay.id, { backgroundColor: value })
                 }
-                className="w-full h-8 rounded p-0"
               />
             </div>
           </div>

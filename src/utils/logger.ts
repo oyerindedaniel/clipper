@@ -10,6 +10,11 @@ const logger = {
       console.log(...args);
     }
   },
+  info: (...args: unknown[]) => {
+    if (isDev) {
+      console.info("%c[INFO]", "color: #007acc", ...args);
+    }
+  },
   warn: (...args: unknown[]) => {
     if (isDev) {
       console.warn(...args);
@@ -21,7 +26,7 @@ const logger = {
   debug: (message: string, data?: unknown) => {
     if (isDev) {
       console.log(
-        `%c[DEBUG] ${message}`,
+        "%c[DEBUG] " + message,
         "background: #222; color: #bada55",
         data || ""
       );
@@ -30,7 +35,7 @@ const logger = {
   format: (message: string, data?: unknown) => {
     if (isDev) {
       console.log(
-        `%c[FORMAT] ${message}`,
+        "%c[FORMAT] " + message,
         "background: #553399; color: #ffffff",
         data || ""
       );

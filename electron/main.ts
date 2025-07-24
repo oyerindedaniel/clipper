@@ -31,7 +31,6 @@ import logger from "../src/utils/logger";
 import DesktopCaptureManager from "./services/desktop-capture";
 import fontManager from "./services/font-manager";
 import { normalizeError } from "../src/utils/error-utils";
-import { parsePixels } from "../src/utils/app";
 
 let mainWindow: BrowserWindow | null = null;
 let twitchWindow: BrowserWindow | null = null;
@@ -290,7 +289,9 @@ async function exportClip(
 
         if (response.success && response.blob && response.metadata) {
           // Handle the blob data from renderer and process with FFmpeg
-          processClipForExport(response, data).then(resolve).catch(reject);
+          processClipForExportWithCanvas(response, data)
+            .then(resolve)
+            .catch(reject);
         } else {
           reject(new Error(response.error || "Export failed"));
         }
@@ -340,7 +341,7 @@ function renderTextOverlay(
   logger.log(`🔤 Using font: ${ctx.font} (requested: ${overlay.fontFamily})`);
 
   const letterSpacing = parseInt(overlay.letterSpacing) || 0;
-  const resolvedMaxWidth = parsePixels(overlay.maxWidth as string);
+  const resolvedMaxWidth = parseFloat(overlay.maxWidth as string);
   const maxWidth = resolvedMaxWidth > 0 ? resolvedMaxWidth : width - x; // Use maxWidth or remaining screen width
 
   // Text alignment
@@ -777,6 +778,9 @@ async function processClipForExportWithCanvas(
     const endSeconds = data.endTime / 1000;
     const duration = endSeconds - startSeconds;
 
+    const videoFPS = await getVideoFrameRate(tempInput);
+    logger.log("🎯 Using video FPS for overlay generation:", videoFPS);
+
     // If we have text overlays, create overlay frames
     if (data.textOverlays && data.textOverlays.length > 0) {
       const overlayFramesDir = path.join(
@@ -785,12 +789,17 @@ async function processClipForExportWithCanvas(
       );
       fs.mkdirSync(overlayFramesDir, { recursive: true });
 
+      const optimizedFPS = calculateOptimalOverlayFPS(
+        data.textOverlays,
+        videoFPS
+      );
+
       await generateOverlayFrames(
         data.textOverlays,
         metadata.dimensions,
         duration,
         overlayFramesDir,
-        30 // fps
+        optimizedFPS
       );
 
       // With overlay filter
@@ -895,7 +904,88 @@ async function processClipForExportWithCanvas(
 }
 
 /**
- * Generate overlay frames using canvas
+ * Calculate optimal FPS for overlay generation based on content analysis
+ */
+function calculateOptimalOverlayFPS(
+  overlays: TextOverlay[],
+  videoFPS: number
+): number {
+  const hasAnimatedText = overlays.some((overlay) => {
+    const duration = overlay.endTime - overlay.startTime;
+    return duration < 5000; // Short duration text might need higher precision
+  });
+
+  const hasMultipleOverlays = overlays.length > 3;
+  const hasComplexStyling = overlays.some(
+    (overlay) =>
+      overlay.backgroundColor !== "transparent" ||
+      overlay.underline ||
+      overlay.italic ||
+      parseInt(overlay.letterSpacing) > 0
+  );
+
+  if (videoFPS >= 60) {
+    // High FPS video - match it for smooth overlays
+    return hasAnimatedText ? 60 : 30;
+  } else if (videoFPS >= 30) {
+    // Standard FPS video
+    return hasComplexStyling || hasMultipleOverlays
+      ? videoFPS
+      : Math.min(videoFPS, 30);
+  } else {
+    // Low FPS video (24fps cinema, etc.)
+    return videoFPS;
+  }
+}
+
+/**
+ * Get video frame rate
+ */
+async function getVideoFrameRate(inputPath: string): Promise<number> {
+  const ffprobePath = ffprobeStatic.path;
+  if (!ffprobePath) throw new Error("FFprobe binary not found");
+
+  return new Promise((resolve, reject) => {
+    const ffprobe = spawn(ffprobePath, [
+      "-v",
+      "error",
+      "-select_streams",
+      "v:0",
+      "-show_entries",
+      "stream=r_frame_rate",
+      "-of",
+      "json",
+      inputPath,
+    ]);
+
+    let output = "";
+    ffprobe.stdout.on("data", (data) => {
+      output += data.toString();
+    });
+
+    ffprobe.on("close", () => {
+      try {
+        const info = JSON.parse(output);
+        const frameRate = info.streams[0].r_frame_rate;
+
+        // Parse fractional frame rate like "30000/1001" or "30/1"
+        const [numerator, denominator] = frameRate.split("/").map(Number);
+        const fps = denominator ? numerator / denominator : numerator;
+
+        logger.log("📊 Detected video FPS:", { frameRate, calculatedFPS: fps });
+        resolve(Math.round(fps));
+      } catch (err) {
+        logger.warn("Could not detect FPS, defaulting to 30");
+        resolve(30);
+      }
+    });
+
+    ffprobe.on("error", reject);
+  });
+}
+
+/**
+ * Generate overlay frames
  */
 async function generateOverlayFrames(
   overlays: TextOverlay[],
@@ -954,7 +1044,7 @@ async function generateOverlayFrames(
 /**
  * Remux a set of video chunks into a trimmed WebM and optionally convert aspect ratio
  */
-export async function remuxClipWithFFmpeg(
+export async function remuxClip(
   chunks: ArrayBuffer[],
   clipStartMs: number,
   clipEndMs: number,
@@ -1431,7 +1521,7 @@ function setupIpc(): void {
       }
     ) => {
       return conversionQueue.add(() =>
-        remuxClipWithFFmpeg(chunks, clipStartMs, clipEndMs, options)
+        remuxClip(chunks, clipStartMs, clipEndMs, options)
       );
     }
   );

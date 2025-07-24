@@ -1,6 +1,12 @@
-import { useRef, useState, useCallback, RefObject } from "react";
+import {
+  useRef,
+  useState,
+  useCallback,
+  RefObject,
+  startTransition,
+} from "react";
 import { TextOverlay } from "@/types/app";
-import { getOverlayNormalizedCoords } from "@/utils/app";
+import { getOverlayNormalizedCoords, getVideoBoundingBox } from "@/utils/app";
 import logger from "@/utils/logger";
 
 interface DragState {
@@ -50,11 +56,13 @@ export const useTextOverlays = (
         return;
       }
 
-      const videoWidth = video.videoWidth;
+      const { width: videoWidth } = getVideoBoundingBox(video);
 
-      console.log("---------video width", videoWidth);
-
-      logger.log("🔍 Adding text overlay", { currentTime, duration });
+      logger.log("🔍 Adding text overlay", {
+        currentTime,
+        duration,
+        videoWidth,
+      });
 
       const newOverlay: TextOverlay = {
         id: `text_${Date.now()}`,
