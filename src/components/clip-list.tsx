@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
+import logger from "@/utils/logger";
 
 interface ClipListProps {
   clips: ClipMarker[];
@@ -195,7 +196,7 @@ export default function ClipList({
                       <Button
                         onClick={() => {
                           // TODO: Implement delete functionality
-                          console.log("Delete clip:", clip.id);
+                          logger.log("Delete clip:", clip.id);
                           toast.info(
                             `Delete functionality for clip ${
                               clip.id.split("_")[1]

@@ -1,17 +1,11 @@
 "use client";
 
-import {
-  useState,
-  useEffect,
-  startTransition,
-  useCallback,
-  useRef,
-} from "react";
+import { useState, useEffect, startTransition, useCallback } from "react";
 import StreamViewer from "@/components/stream-viewer";
 import RecordingControls from "@/components/recording-controls";
 import ClipEditor from "@/components/clip-editor";
-import ClipList from "../components/clip-list";
-import { ClipMarker, CropMode, RecordingStartedInfo } from "@/types/app";
+import ClipList from "@/components/clip-list";
+import { ClipMarker, RecordingStartedInfo } from "@/types/app";
 import { IpcRendererEvent } from "electron";
 import { normalizeError } from "@/utils/error-utils";
 import { toast } from "sonner";
@@ -20,8 +14,6 @@ import logger from "@/utils/logger";
 import { waitUntilBufferCatchesUp } from "@/utils/app";
 import { Button } from "@/components/ui/button";
 import { Tv } from "lucide-react";
-import { DEFAULT_ASPECT_RATIO, DEFAULT_CROP_MODE } from "@/constants/app";
-import { ClipMetadata } from "@/types/app";
 
 type TabKey = "stream" | "clips" | "editor";
 

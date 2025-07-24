@@ -1,11 +1,12 @@
 import { useState } from "react";
-import { Play, Square, Monitor, Tv } from "lucide-react";
+import { Play, Monitor, Tv } from "lucide-react";
 import type { DesktopSource } from "@/types/app";
 import { normalizeError } from "@/utils/error-utils";
 import { toast } from "sonner";
 import DesktopSourceSkeleton from "@/components/desktop-source-skeleton";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
+import logger from "@/utils/logger";
 
 interface StreamViewerProps {
   isRecording: boolean;
@@ -32,14 +33,14 @@ export default function StreamViewer({
     if (next) {
       try {
         if (!window.electronAPI?.getDesktopSources) {
-          console.warn("Electron desktop capture API not available.");
+          logger.warn("Electron desktop capture API not available.");
           return;
         }
         setIsLoadingSources(true);
         const sources = await window.electronAPI.getDesktopSources();
         setDesktopSources(sources);
       } catch (error) {
-        console.error("Failed to load desktop sources:", error);
+        logger.error("Failed to load desktop sources:", error);
         const normalizedError = normalizeError(error);
         toast.error(
           `Failed to load desktop sources: ${normalizedError.message}`
@@ -53,7 +54,7 @@ export default function StreamViewer({
   const handleOpenStream = async () => {
     if (!channelName.trim()) return;
     if (!window.electronAPI || !window.electronAPI.openTwitchStream) {
-      console.warn(
+      logger.warn(
         "Not in Electron environment or electronAPI not available for opening stream."
       );
       return;
@@ -63,7 +64,7 @@ export default function StreamViewer({
       await window.electronAPI.openTwitchStream(channelName);
       setStreamActive(true);
     } catch (error) {
-      console.error("Failed to open stream:", error);
+      logger.error("Failed to open stream:", error);
       const normalizedError = normalizeError(error);
       toast.error(`Failed to open stream: ${normalizedError.message}`);
     }
@@ -78,7 +79,7 @@ export default function StreamViewer({
       return;
     }
     if (!window.electronAPI || !window.electronAPI.startRecording) {
-      console.warn(
+      logger.warn(
         "Not in Electron environment or electronAPI not available for starting recording."
       );
       return;
@@ -87,7 +88,7 @@ export default function StreamViewer({
     try {
       await window.electronAPI.startRecording(selectedSource.id);
     } catch (error) {
-      console.error("Failed to start recording:", error);
+      logger.error("Failed to start recording:", error);
       const normalizedError = normalizeError(error);
       toast.error(`Failed to start recording: ${normalizedError.message}`);
     }
