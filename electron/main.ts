@@ -188,8 +188,6 @@ async function startRecording(sourceId?: string): Promise<void> {
     const msg = err instanceof Error ? err.message : "Unknown error";
     logger.error("Recording failed:", msg);
 
-    captureManager.clearRetryCache();
-
     mainWindow?.webContents.send("recording-error", msg);
     throw err;
   }
@@ -218,8 +216,6 @@ async function stopRecording(): Promise<void> {
           recordingProcess.kill();
           recordingProcess = null;
         }
-
-        captureManager.clearRetryCache();
 
         mainWindow?.webContents.send("recording-stopped");
         resolve();
