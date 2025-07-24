@@ -43,6 +43,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("select-output-folder"),
   getDesktopSources: (): Promise<DesktopSource[]> =>
     ipcRenderer.invoke("get-desktop-sources"),
+  getStreamerName: (): Promise<string | null> =>
+    ipcRenderer.invoke("get-streamer-name"),
 
   // Recording service communication
   onRequestStartRecording: (

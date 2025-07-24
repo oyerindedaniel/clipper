@@ -82,7 +82,7 @@ export const useTextOverlays = (
         underline: false,
         alignment: "center",
         visible: true,
-        maxWidth: `${videoWidth * 0.7}px`,
+        maxWidth: `${videoWidth * 0.65}px`,
       };
 
       setTextOverlays((prev) => [...prev, newOverlay]);

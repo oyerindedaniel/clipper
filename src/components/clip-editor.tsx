@@ -37,6 +37,7 @@ import { useDisclosure } from "@/hooks/use-disclosure";
 import { DEFAULT_ASPECT_RATIO, DEFAULT_CROP_MODE } from "@/constants/app";
 import { Timeline } from "@/components/timeline";
 import { TimelineSkeleton } from "@/components/timeline-skeleton";
+import { ExportNamingDialog } from "@/components/ui/export-naming-dialog";
 
 interface ClipEditorProps {
   clip: ClipMarker | null;
@@ -64,6 +65,11 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
     isOpen: isAspectRatioModalOpen,
     close: closeAspectRatioModal,
     open: openAspectRatioModal,
+  } = useDisclosure();
+  const {
+    isOpen: isExportNamingModalOpen,
+    close: closeExportNamingModal,
+    open: openExportNamingModal,
   } = useDisclosure();
   const selectedConvertAspectRatio = useRef<string>(DEFAULT_ASPECT_RATIO);
   const selectedCropMode = useRef<CropMode>(DEFAULT_CROP_MODE);
@@ -324,6 +330,63 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
     });
   };
 
+  const handleFinalExport = async (outputName: string) => {
+    if (!clip) return;
+
+    setIsExporting(true);
+
+    const promise = new Promise<string>(async (resolve, reject) => {
+      try {
+        const outputPath = await window.electronAPI.selectOutputFolder();
+        if (!outputPath) {
+          setIsExporting(false);
+          return reject(new Error("No output path selected"));
+        }
+
+        const exportData: ClipExportData = {
+          id: clip.id,
+          startTime: trimRef.current.start || 0,
+          endTime: trimRef.current.end || duration,
+          outputName,
+          outputPath,
+          textOverlays: textOverlays.filter((overlay) => overlay.visible),
+          audioTracks: audioTracks.filter((track) => track.visible),
+          exportSettings: {
+            ...exportSettings,
+            convertAspectRatio: selectedConvertAspectRatio.current || undefined,
+            cropMode: selectedCropMode.current,
+          },
+        };
+
+        const result = await window.electronAPI.exportClip(exportData);
+
+        if (result.success) {
+          closeAspectRatioModal();
+          resolve(result.outputPath);
+        } else {
+          reject(new Error("Export failed"));
+        }
+      } catch (error) {
+        logger.error("Export error:", error);
+        reject(error);
+      } finally {
+        setIsExporting(false);
+      }
+    });
+
+    toast.promise(promise, {
+      loading: "Exporting clip...",
+      success: (outputPath) => {
+        return `Clip exported successfully to: ${outputPath}`;
+      },
+      error: (err) => {
+        const normalizedError = normalizeError(err);
+        return `Export failed: ${normalizedError.message}`;
+      },
+      id: clip.id,
+    });
+  };
+
   const handleSettingsApplied = (aspectRatio: string, cropMode: string) => {
     selectedConvertAspectRatio.current = aspectRatio;
     selectedCropMode.current = cropMode as CropMode;
@@ -441,7 +504,7 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
             </Button>
 
             <Button
-              onClick={handleExport}
+              onClick={() => openExportNamingModal()}
               disabled={!clip || isExporting}
               className="flex items-center space-x-2 px-3 py-1.5 text-xs"
               variant="default"
@@ -847,6 +910,12 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
           isOpen={isAspectRatioModalOpen}
           onOpenChange={closeAspectRatioModal}
           onSettingsApplied={handleSettingsApplied}
+        />
+
+        <ExportNamingDialog
+          isOpen={isExportNamingModalOpen}
+          onOpenChange={closeExportNamingModal}
+          onExport={handleFinalExport}
         />
       </div>
     </div>

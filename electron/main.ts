@@ -1504,6 +1504,17 @@ function setupIpc(): void {
     return !result.canceled && result.filePaths[0] ? result.filePaths[0] : null;
   });
 
+  ipcMain.handle("get-streamer-name", () => {
+    if (twitchWindow) {
+      const url = twitchWindow.webContents.getURL();
+      const match = url.match(/twitch\.tv\/([^/\?]+)/);
+      if (match && match[1]) {
+        return match[1];
+      }
+    }
+    return null;
+  });
+
   ipcMain.handle(
     "remux-clip",
     async (

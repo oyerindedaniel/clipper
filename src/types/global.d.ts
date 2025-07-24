@@ -33,6 +33,7 @@ export interface ElectronAPI {
   ) => Promise<{ success: boolean; outputPath: string }>;
   selectOutputFolder: () => Promise<string | null>;
   getDesktopSources: () => Promise<DesktopSource[]>;
+  getStreamerName: () => Promise<string | null>;
   onRequestStartRecording: (
     callback: (
       _: IpcRendererEvent,
