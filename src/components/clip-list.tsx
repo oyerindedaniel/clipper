@@ -20,6 +20,8 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import logger from "@/utils/logger";
+import { DeleteConfirmationDialog } from "@/components/delete-confirmation-dialog";
+import { useDisclosure } from "@/hooks/use-disclosure";
 
 interface ClipListProps {
   clips: ClipMarker[];
@@ -37,6 +39,13 @@ export default function ClipList({
   const [sortBy, setSortBy] = useState<SortMode>("newest");
   const [filterText, setFilterText] = useState<string>("");
   const [isLoading, setIsLoading] = useState<boolean>(false);
+  const [clipToDelete, setClipToDelete] = useState<ClipMarker | null>(null);
+
+  const {
+    isOpen: isDeleteConfirmModalOpen,
+    open: openDeleteConfirmModal,
+    close: closeDeleteConfirmModal,
+  } = useDisclosure();
 
   const sortedAndFilteredClips = useMemo(() => {
     return clips
@@ -86,6 +95,19 @@ export default function ClipList({
     if (hours > 0) return `${hours}h ago`;
     if (minutes > 0) return `${minutes}m ago`;
     return "Just now";
+  };
+
+  const handleDeleteConfirm = () => {
+    if (clipToDelete) {
+      logger.log("Deleting clip:", clipToDelete.id);
+      toast.info(
+        `Dummy delete for clip ${clipToDelete.id.split("_")[1]} triggered.`
+      );
+      // In a real scenario, you would call an API or service to delete the clip
+      // and then update the clips state accordingly.
+      setClipToDelete(null);
+      closeDeleteConfirmModal();
+    }
   };
 
   return (
@@ -195,13 +217,8 @@ export default function ClipList({
                       </Button>
                       <Button
                         onClick={() => {
-                          // TODO: Implement delete functionality
-                          logger.log("Delete clip:", clip.id);
-                          toast.info(
-                            `Delete functionality for clip ${
-                              clip.id.split("_")[1]
-                            } is not yet implemented.`
-                          );
+                          setClipToDelete(clip);
+                          openDeleteConfirmModal();
                         }}
                         className="flex items-center justify-center transform hover:scale-105 w-7 h-7 p-1 bg-surface-tertiary hover:bg-surface-hover"
                         variant="destructive"
@@ -233,6 +250,14 @@ export default function ClipList({
           </div>
         )}
       </div>
+      <DeleteConfirmationDialog
+        isOpen={isDeleteConfirmModalOpen}
+        onOpenChange={closeDeleteConfirmModal}
+        onConfirm={handleDeleteConfirm}
+        itemName={
+          clipToDelete ? `clip ${clipToDelete.id.split("_")[1]}` : "this clip"
+        }
+      />
     </div>
   );
 }

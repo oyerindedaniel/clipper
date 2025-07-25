@@ -37,7 +37,8 @@ import { useDisclosure } from "@/hooks/use-disclosure";
 import { DEFAULT_ASPECT_RATIO, DEFAULT_CROP_MODE } from "@/constants/app";
 import { Timeline } from "@/components/timeline";
 import { TimelineSkeleton } from "@/components/timeline-skeleton";
-import { ExportNamingDialog } from "@/components/ui/export-naming-dialog";
+import { ExportNamingDialog } from "@/components/export-naming-dialog";
+import { calculateMaxWidth } from "@/hooks/use-text-overlays";
 
 interface ClipEditorProps {
   clip: ClipMarker | null;
@@ -55,6 +56,8 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
     resolution: "1080p",
     fps: 60,
     bitrate: 8000,
+    preset: "fast",
+    crf: 23,
   });
   const [isExporting, setIsExporting] = useState(false);
   const [activeTab, setActiveTab] = useState<ClipToolType>("clips");
@@ -117,7 +120,7 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
     trace.style.height = `${height}px`;
     trace.style.backgroundColor = "rgba(255, 0, 0, 0.3)";
     trace.style.pointerEvents = "none";
-    trace.style.zIndex = "99";
+    trace.style.zIndex = "15";
   }, []);
 
   const loadClipVideo = useCallback(async (): Promise<string | null> => {
@@ -273,64 +276,10 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
     setAudioTracks(audioTracks.filter((track) => track.id !== id));
   };
 
-  const handleExport = async () => {
-    if (!clip) return;
-
-    setIsExporting(true);
-
-    const promise = new Promise<string>(async (resolve, reject) => {
-      try {
-        const outputPath = await window.electronAPI.selectOutputFolder();
-        if (!outputPath) {
-          setIsExporting(false);
-          return reject(new Error("No output path selected"));
-        }
-
-        const exportData: ClipExportData = {
-          id: clip.id,
-          startTime: trimRef.current.start || 0,
-          endTime: trimRef.current.end || duration,
-          outputName: `${clip.id}`,
-          outputPath,
-          textOverlays: textOverlays.filter((overlay) => overlay.visible),
-          audioTracks: audioTracks.filter((track) => track.visible),
-          exportSettings: {
-            ...exportSettings,
-            convertAspectRatio: selectedConvertAspectRatio.current || undefined,
-            cropMode: selectedCropMode.current,
-          },
-        };
-
-        const result = await window.electronAPI.exportClip(exportData);
-
-        if (result.success) {
-          closeAspectRatioModal();
-          resolve(result.outputPath);
-        } else {
-          reject(new Error("Export failed"));
-        }
-      } catch (error) {
-        logger.error("Export error:", error);
-        reject(error);
-      } finally {
-        setIsExporting(false);
-      }
-    });
-
-    toast.promise(promise, {
-      loading: "Exporting clip...",
-      success: (outputPath) => {
-        return `Clip exported successfully to: ${outputPath}`;
-      },
-      error: (err) => {
-        const normalizedError = normalizeError(err);
-        return `Export failed: ${normalizedError.message}`;
-      },
-      id: clip.id,
-    });
-  };
-
-  const handleFinalExport = async (outputName: string) => {
+  const handleExport = async (
+    outputName: string,
+    { preset, crf }: Pick<ExportSettings, "preset" | "crf">
+  ) => {
     if (!clip) return;
 
     setIsExporting(true);
@@ -349,10 +298,19 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
           endTime: trimRef.current.end || duration,
           outputName,
           outputPath,
-          textOverlays: textOverlays.filter((overlay) => overlay.visible),
+          textOverlays: textOverlays
+            .filter((overlay) => overlay.visible)
+            .map((overlay) => ({
+              ...overlay,
+              maxWidth: calculateMaxWidth(
+                clipMetaDataRef.current?.dimensions.width || 1920
+              ), // max width for export is based on the video intrinsic dimension
+            })),
           audioTracks: audioTracks.filter((track) => track.visible),
           exportSettings: {
             ...exportSettings,
+            preset,
+            crf,
             convertAspectRatio: selectedConvertAspectRatio.current || undefined,
             cropMode: selectedCropMode.current,
           },
@@ -915,7 +873,7 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
         <ExportNamingDialog
           isOpen={isExportNamingModalOpen}
           onOpenChange={closeExportNamingModal}
-          onExport={handleFinalExport}
+          onExport={handleExport}
         />
       </div>
     </div>

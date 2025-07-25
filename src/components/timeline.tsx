@@ -185,15 +185,15 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
         <div
           ref={timelineRef}
           className="absolute inset-0 bg-gradient-to-b from-surface-primary to-surface-secondary"
-          style={{
-            backgroundImage: `repeating-linear-gradient(
-              90deg,
-              transparent,
-              transparent 10px,
-              var(--surface-hover) 10px,
-              var(--surface-hover) 11px
-            )`,
-          }}
+          // style={{
+          //   backgroundImage: `repeating-linear-gradient(
+          //     90deg,
+          //     transparent,
+          //     transparent 10px,
+          //     var(--surface-hover) 10px,
+          //     var(--surface-hover) 11px
+          //   )`,
+          // }}
         >
           {/* {Array.from({ length: Math.floor(duration / 1000) }).map((_, i) => (
             <div

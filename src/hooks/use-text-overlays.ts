@@ -22,6 +22,10 @@ interface DragState {
   finalTop: number;
 }
 
+export function calculateMaxWidth(value: number): string {
+  return `${Math.round(value * 0.65)}px`;
+}
+
 /**
  * Hook for managing and dragging text overlays over a canvas.
  */
@@ -82,7 +86,7 @@ export const useTextOverlays = (
         underline: false,
         alignment: "center",
         visible: true,
-        maxWidth: `${videoWidth * 0.65}px`,
+        maxWidth: calculateMaxWidth(videoWidth),
       };
 
       setTextOverlays((prev) => [...prev, newOverlay]);

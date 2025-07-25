@@ -60,6 +60,17 @@ export interface ExportSettings {
   resolution: "720p" | "1080p" | "1440p" | "4k";
   fps: 30 | 60;
   bitrate: number;
+  preset:
+    | "ultrafast"
+    | "superfast"
+    | "veryfast"
+    | "faster"
+    | "fast"
+    | "medium"
+    | "slow"
+    | "slower"
+    | "veryslow";
+  crf: number;
   convertAspectRatio?: string;
   cropMode?: CropMode;
 }

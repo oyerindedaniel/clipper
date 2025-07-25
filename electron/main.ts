@@ -324,13 +324,26 @@ function renderTextOverlay(
   if (overlay.italic) fontStyle += "italic ";
   if (overlay.bold) fontStyle += "bold ";
 
+  const weight = overlay.bold ? "700" : "400";
+  const style = overlay.italic ? "italic" : "";
+
   const actualFontFamily = fontManager.getFontFamily(
     overlay.fontFamily,
-    overlay.bold ? "700" : "400",
+    weight,
     overlay.italic ? "italic" : "normal"
   );
 
-  ctx.font = `${fontStyle}${overlay.fontSize}px "${actualFontFamily}"`;
+  logger.log("🖋️ Setting canvas font:", {
+    style,
+    weight,
+    fontSize: overlay.fontSize,
+    fontFamily: actualFontFamily,
+    finalFontString:
+      `${style} ${weight} ${overlay.fontSize}px "${actualFontFamily}"`.trim(),
+  });
+
+  ctx.font =
+    `${style} ${weight} ${overlay.fontSize}px "${actualFontFamily}"`.trim();
   ctx.fillStyle = overlay.color;
   ctx.globalAlpha = overlay.opacity;
 
@@ -456,17 +469,25 @@ function wrapText(
       // Current line is full, start a new line
       lines.push(currentLine);
       currentLine = word;
+
+      // Check if the single word itself is too wide - if so, force it anyway
+      const wordWidth = measureTextWithSpacing(ctx, word, letterSpacing);
+      if (wordWidth > maxWidth) {
+        // Word is too long, but we have to include it
+        lines.push(word);
+        currentLine = "";
+      }
     } else {
       currentLine = testLine;
     }
   }
 
-  // Add the last line
+  // Add the last line if it exists
   if (currentLine) {
     lines.push(currentLine);
   }
 
-  // Handle case where no words fit (shouldn't happen with reasonable maxWidth)
+  // Ensure we always return at least one line
   return lines.length > 0 ? lines : [text];
 }
 
@@ -753,6 +774,7 @@ async function processClipForExportWithCanvas(
   data: ClipExportData
 ): Promise<{ success: boolean; outputPath: string }> {
   const { blob, metadata } = response;
+  const { exportSettings } = data;
 
   try {
     if (!blob || !metadata) throw new Error("Missing blob or metadata");
@@ -761,6 +783,10 @@ async function processClipForExportWithCanvas(
       clipId: data.id,
       videoDimensions: metadata.dimensions,
       overlayCount: data.textOverlays?.length || 0,
+      exportSettings: {
+        preset: exportSettings.preset,
+        crf: exportSettings.crf,
+      },
     });
 
     const tempInput = path.join(bufferDir, `temp_clip_${Date.now()}.webm`);
@@ -785,10 +811,7 @@ async function processClipForExportWithCanvas(
       );
       fs.mkdirSync(overlayFramesDir, { recursive: true });
 
-      const optimizedFPS = calculateOptimalOverlayFPS(
-        data.textOverlays,
-        videoFPS
-      );
+      const optimizedFPS = videoFPS >= 60 ? 60 : videoFPS >= 30 ? 30 : videoFPS;
 
       await generateOverlayFrames(
         data.textOverlays,
@@ -817,9 +840,9 @@ async function processClipForExportWithCanvas(
         "-c:a",
         "aac",
         "-preset",
-        "fast",
+        exportSettings.preset,
         "-crf",
-        "23",
+        exportSettings.crf.toString(),
         "-y",
         output,
       ];
@@ -867,13 +890,13 @@ async function processClipForExportWithCanvas(
         "-t",
         duration.toString(),
         "-c:v",
-        "libx264",
+        "libx64",
         "-c:a",
         "aac",
         "-preset",
-        "fast",
+        exportSettings.preset,
         "-crf",
-        "23",
+        exportSettings.crf.toString(),
         "-y",
         output,
       ];
@@ -896,41 +919,6 @@ async function processClipForExportWithCanvas(
   } catch (error) {
     logger.error("💥 Canvas export failed:", error);
     throw error;
-  }
-}
-
-/**
- * Calculate optimal FPS for overlay generation based on content analysis
- */
-function calculateOptimalOverlayFPS(
-  overlays: TextOverlay[],
-  videoFPS: number
-): number {
-  const hasAnimatedText = overlays.some((overlay) => {
-    const duration = overlay.endTime - overlay.startTime;
-    return duration < 5000; // Short duration text might need higher precision
-  });
-
-  const hasMultipleOverlays = overlays.length > 3;
-  const hasComplexStyling = overlays.some(
-    (overlay) =>
-      overlay.backgroundColor !== "transparent" ||
-      overlay.underline ||
-      overlay.italic ||
-      parseInt(overlay.letterSpacing) > 0
-  );
-
-  if (videoFPS >= 60) {
-    // High FPS video - match it for smooth overlays
-    return hasAnimatedText ? 60 : 30;
-  } else if (videoFPS >= 30) {
-    // Standard FPS video
-    return hasComplexStyling || hasMultipleOverlays
-      ? videoFPS
-      : Math.min(videoFPS, 30);
-  } else {
-    // Low FPS video (24fps cinema, etc.)
-    return videoFPS;
   }
 }
 
@@ -997,44 +985,83 @@ async function generateOverlayFrames(
   );
   const ctx: CanvasRenderingContext2D = canvas.getContext("2d");
 
-  logger.log("🎨 Generating overlay frames", {
+  logger.log("🧠 Generating smart overlay frames", {
     totalFrames,
     fps,
     duration,
     dimensions: videoDimensions,
   });
 
+  // Calculate keyframes - times when overlay state changes
+  const keyframes = new Set<number>();
+  overlays.forEach((overlay) => {
+    keyframes.add(Math.floor((overlay.startTime / 1000) * fps));
+    keyframes.add(Math.floor((overlay.endTime / 1000) * fps));
+  });
+
+  // Always include first and last frame
+  keyframes.add(0);
+  keyframes.add(totalFrames - 1);
+
+  const keyframeArray = Array.from(keyframes).sort((a, b) => a - b);
+  logger.log("🔑 Keyframes identified:", keyframeArray);
+
+  let lastFrameBuffer: Buffer | null = null;
+  let lastFrameIndex = -1;
+
   for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
     const currentTimeMs = (frameIndex / fps) * 1000;
 
-    // Clear canvas with transparent background
-    ctx.clearRect(0, 0, videoDimensions.width, videoDimensions.height);
+    // Check if this frame needs to be generated (is a keyframe or overlay state changed)
+    const needsGeneration =
+      keyframeArray.includes(frameIndex) ||
+      overlays.some((overlay) => {
+        const wasVisible =
+          currentTimeMs - 1000 / fps >= overlay.startTime &&
+          currentTimeMs - 1000 / fps <= overlay.endTime;
+        const isVisible =
+          currentTimeMs >= overlay.startTime &&
+          currentTimeMs <= overlay.endTime;
+        return wasVisible !== isVisible; // Visibility changed
+      });
 
-    // Render overlays that should be visible at this time
-    overlays.forEach((overlay) => {
-      if (
-        overlay.visible &&
-        currentTimeMs >= overlay.startTime &&
-        currentTimeMs <= overlay.endTime
-      ) {
-        renderTextOverlay(canvas, ctx, overlay, videoDimensions);
-      }
-    });
+    if (needsGeneration) {
+      // Clear canvas and render new frame
+      ctx.clearRect(0, 0, videoDimensions.width, videoDimensions.height);
 
-    // Save frame as PNG
-    const frameBuffer = canvas.toBuffer("image/png");
-    const framePath = path.join(
-      outputDir,
-      `overlay_${frameIndex.toString().padStart(4, "0")}.png`
-    );
-    fs.writeFileSync(framePath, frameBuffer);
+      overlays.forEach((overlay) => {
+        if (
+          overlay.visible &&
+          currentTimeMs >= overlay.startTime &&
+          currentTimeMs <= overlay.endTime
+        ) {
+          renderTextOverlay(canvas, ctx, overlay, videoDimensions);
+        }
+      });
 
-    if (frameIndex % 30 === 0) {
-      logger.log(`📸 Generated frame ${frameIndex}/${totalFrames}`);
+      lastFrameBuffer = canvas.toBuffer("image/png");
+      lastFrameIndex = frameIndex;
+
+      logger.log(`🎨 Generated new frame ${frameIndex} (keyframe)`);
+    }
+
+    // Save frame (either newly generated or reused)
+    if (lastFrameBuffer) {
+      const framePath = path.join(
+        outputDir,
+        `overlay_${frameIndex.toString().padStart(4, "0")}.png`
+      );
+      fs.writeFileSync(framePath, lastFrameBuffer);
+    }
+
+    if (frameIndex % 60 === 0) {
+      logger.log(
+        `📸 Processed frame ${frameIndex}/${totalFrames} (last generated: ${lastFrameIndex})`
+      );
     }
   }
 
-  logger.log("✅ All overlay frames generated");
+  logger.log("✅ Smart overlay frames generated with optimization");
 }
 
 /**
@@ -1554,6 +1581,7 @@ app
     if (process.platform !== "darwin") app.quit();
   })
   .on("will-quit", () => {
+    fontManager.cleanup();
     globalShortcut.unregisterAll();
     if (isRecording) stopRecording();
     cleanOldBuffers();
