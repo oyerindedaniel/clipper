@@ -1,10 +1,4 @@
-import {
-  useRef,
-  useState,
-  useCallback,
-  RefObject,
-  startTransition,
-} from "react";
+import { useRef, useState, useCallback } from "react";
 import { TextOverlay } from "@/types/app";
 import { getOverlayNormalizedCoords, getVideoBoundingBox } from "@/utils/app";
 import logger from "@/utils/logger";

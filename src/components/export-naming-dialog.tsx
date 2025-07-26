@@ -23,7 +23,7 @@ interface ExportNamingDialogProps {
   onOpenChange: (open: boolean) => void;
   onExport: (
     outputName: string,
-    exportSettings: Pick<ExportSettings, "preset" | "crf">
+    exportSettings: Pick<ExportSettings, "preset" | "crf" | "fps" | "format">
   ) => void;
 }
 
@@ -71,6 +71,46 @@ const crfValues: {
   },
 ];
 
+const fpsOptions: {
+  value: ExportSettings["fps"];
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: 24,
+    label: "24 FPS",
+    description: "Cinematic look, smaller file size.",
+  },
+  { value: 30, label: "30 FPS", description: "Standard video frame rate." },
+  {
+    value: 60,
+    label: "60 FPS",
+    description: "Smoother motion, larger file size.",
+  },
+];
+
+const formatOptions: {
+  value: ExportSettings["format"];
+  label: string;
+  description: string;
+}[] = [
+  {
+    value: "mp4",
+    label: "MP4",
+    description: "Widely compatible video format.",
+  },
+  {
+    value: "webm",
+    label: "WebM",
+    description: "Open-source format, good for web.",
+  },
+  {
+    value: "mov",
+    label: "MOV",
+    description: "Apple QuickTime format, high quality.",
+  },
+];
+
 export const ExportNamingDialog: React.FC<ExportNamingDialogProps> = ({
   isOpen,
   onOpenChange,
@@ -82,6 +122,8 @@ export const ExportNamingDialog: React.FC<ExportNamingDialogProps> = ({
   const timeRef = useRef<HTMLInputElement>(null);
   const presetRef = useRef<ExportSettings["preset"]>("fast");
   const crfRef = useRef<ExportSettings["crf"]>(23);
+  const fpsRef = useRef<ExportSettings["fps"]>(60);
+  const formatRef = useRef<ExportSettings["format"]>("mp4");
 
   useEffect(() => {
     if (isOpen) {
@@ -100,9 +142,10 @@ export const ExportNamingDialog: React.FC<ExportNamingDialogProps> = ({
           }
         });
 
-        // Set default values for preset and CRF
         presetRef.current = "fast";
         crfRef.current = 23;
+        fpsRef.current = 60;
+        formatRef.current = "mp4";
       }, 0);
     }
 
@@ -111,7 +154,6 @@ export const ExportNamingDialog: React.FC<ExportNamingDialogProps> = ({
       if (timeRef.current) timeRef.current.value = "";
       if (clipTitleRef.current) clipTitleRef.current.value = "";
       if (streamerNameRef.current) streamerNameRef.current.value = "";
-      // No need to clear presetRef/crfRef as they are handled by onExport
     };
   }, [isOpen]);
 
@@ -125,7 +167,12 @@ export const ExportNamingDialog: React.FC<ExportNamingDialogProps> = ({
       /[^a-zA-Z0-9-_.]/g,
       "_"
     );
-    onExport(outputName, { preset: presetRef.current, crf: crfRef.current });
+    onExport(outputName, {
+      preset: presetRef.current,
+      crf: crfRef.current,
+      fps: fpsRef.current,
+      format: formatRef.current,
+    });
     onOpenChange(false);
   };
 
@@ -185,6 +232,68 @@ export const ExportNamingDialog: React.FC<ExportNamingDialogProps> = ({
               className="col-span-3 text-xs"
               ref={timeRef}
             />
+          </div>
+
+          <div className="grid grid-cols-4 items-center gap-4">
+            <label htmlFor="fps" className="text-right text-xs">
+              Frame Rate
+            </label>
+            <Select
+              value={String(fpsRef.current)}
+              onValueChange={(value) =>
+                (fpsRef.current = parseInt(value) as ExportSettings["fps"])
+              }
+            >
+              <SelectTrigger
+                id="fps"
+                className="col-span-3 h-auto px-2 py-1 text-xs"
+              >
+                <SelectValue placeholder="Select FPS" />
+              </SelectTrigger>
+              <SelectContent>
+                {fpsOptions.map((f) => (
+                  <SelectItem key={f.value} value={String(f.value)}>
+                    <div className="flex items-center justify-between w-full">
+                      <span>{f.label}</span>
+                      <Badge variant="secondary" className="ml-2">
+                        {f.description}
+                      </Badge>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="grid grid-cols-4 items-center gap-4">
+            <label htmlFor="format" className="text-right text-xs">
+              Format
+            </label>
+            <Select
+              value={formatRef.current}
+              onValueChange={(value) =>
+                (formatRef.current = value as ExportSettings["format"])
+              }
+            >
+              <SelectTrigger
+                id="format"
+                className="col-span-3 h-auto px-2 py-1 text-xs"
+              >
+                <SelectValue placeholder="Select format" />
+              </SelectTrigger>
+              <SelectContent>
+                {formatOptions.map((f) => (
+                  <SelectItem key={f.value} value={f.value}>
+                    <div className="flex items-center justify-between w-full">
+                      <span>{f.label}</span>
+                      <Badge variant="secondary" className="ml-2">
+                        {f.description}
+                      </Badge>
+                    </div>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="grid grid-cols-4 items-center gap-4">

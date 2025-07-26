@@ -354,7 +354,9 @@ class RecordingService {
     const cacheKey = `${startTime}-${endTime}-${aspectPart}`;
     const cached = this.clipCache.get(cacheKey);
 
-    if (cached && Date.now() - cached.cachedAt < this.clipCacheExpiry) {
+    // && Date.now() - cached.cachedAt < this.clipCacheExpiry
+
+    if (cached) {
       logger.log("📦 Using cached clip", { cacheKey });
       return cached.blob;
     }
