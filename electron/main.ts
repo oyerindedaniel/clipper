@@ -345,153 +345,180 @@ function renderTextOverlay(
   videoDimensions: { width: number; height: number },
   scaleFactor: number = 1.0
 ): void {
-  if (!overlay.visible) return;
+  if (!overlay.visible) {
+    logger.log("⛔ Overlay not visible, skipping render.");
+    return;
+  }
 
-  const { width, height } = videoDimensions;
+  const { width: videoWidth, height: videoHeight } = videoDimensions;
+  logger.log(`📐 Video dimensions: ${videoWidth} x ${videoHeight}`);
 
-  // Apply scale factor to all dimensions
-  const x = overlay.x * width;
-  const y = overlay.y * height;
+  // CSS padding from DraggableTextOverlay: "8px 12px" = top/bottom: 8px, left/right: 12px
+  const basePaddingX = 12;
+  const basePaddingY = 8;
+
+  // Scale padding with scale factor
+  const scaledPaddingX = Math.round(basePaddingX * scaleFactor);
+  const scaledPaddingY = Math.round(basePaddingY * scaleFactor);
   const scaledFontSize = Math.round(overlay.fontSize * scaleFactor);
 
+  // Set up font for text measurement
   let fontStyle = "";
   if (overlay.italic) fontStyle += "italic ";
   if (overlay.bold) fontStyle += "bold ";
 
   const weight = overlay.bold ? "700" : "400";
-  const style = overlay.italic ? "italic" : "";
+  const style = overlay.italic ? "italic" : "normal";
 
   const actualFontFamily = fontManager.getFontFamily(
     overlay.fontFamily,
     weight,
-    overlay.italic ? "italic" : "normal"
+    style
   );
-
-  logger.log("🖋️ Setting canvas font with scale factor:", {
-    style,
-    weight,
-    originalFontSize: overlay.fontSize,
-    scaledFontSize,
-    scaleFactor,
-    fontFamily: actualFontFamily,
-    finalFontString:
-      `${style} ${weight} ${scaledFontSize}px "${actualFontFamily}"`.trim(),
-  });
 
   ctx.font =
     `${style} ${weight} ${scaledFontSize}px "${actualFontFamily}"`.trim();
   ctx.fillStyle = overlay.color;
   ctx.globalAlpha = overlay.opacity;
 
-  logger.log(`🔤 Using font: ${ctx.font} (requested: ${overlay.fontFamily})`);
+  logger.log(`🔤 Using font: ${ctx.font}`);
 
   const scaledLetterSpacing = Math.round(
     (parseInt(overlay.letterSpacing) || 0) * scaleFactor
   );
+
+  // Calculate content area width (maxWidth minus padding)
   const resolvedMaxWidth = parseFloat(overlay.maxWidth as string);
   const scaledMaxWidth =
-    resolvedMaxWidth > 0 ? resolvedMaxWidth * scaleFactor : width - x;
+    resolvedMaxWidth > 0 ? resolvedMaxWidth * scaleFactor : videoWidth * 0.8;
+  const contentAreaWidth = scaledMaxWidth - 2 * scaledPaddingX;
 
-  console.log("-----------scaledMaxWidth", scaledMaxWidth);
-
-  // Text alignment
-  ctx.textAlign = overlay.alignment;
-  let alignedX = x;
-  if (overlay.alignment === "center") {
-    alignedX = x;
-    ctx.textAlign = "center";
-  } else if (overlay.alignment === "right") {
-    alignedX = x;
-    ctx.textAlign = "right";
-  }
-
-  // Handle text wrapping and maxWidth with scaling
+  // Wrap text based on content area width
   const wrappedLines = wrapText(
     ctx,
     overlay.text,
-    scaledMaxWidth,
+    contentAreaWidth,
     scaledLetterSpacing
   );
-  const scaledLineHeight = scaledFontSize * 1.2; // Standard line height multiplier
 
-  // Calculate total text block dimensions for background
-  const totalTextHeight = wrappedLines.length * scaledLineHeight;
+  // Calculate actual content dimensions
   const maxLineWidth = Math.max(
     ...wrappedLines.map((line) =>
       measureTextWithSpacing(ctx, line, scaledLetterSpacing)
     )
   );
+  const actualContentWidth = Math.min(maxLineWidth, contentAreaWidth);
+  const scaledLineHeight = scaledFontSize * 1.2;
+  const totalTextHeight = wrappedLines.length * scaledLineHeight;
 
-  // Background rendering (if specified) with scaling
+  // Calculate div dimensions (content + padding)
+  const divWidth = actualContentWidth + 2 * scaledPaddingX;
+  const divHeight = totalTextHeight + 2 * scaledPaddingY;
+
+  // Position div's border box at normalized coordinates
+  const idealDivX = overlay.x * videoWidth;
+  const idealDivY = overlay.y * videoHeight;
+
+  // Clamp div to prevent clipping
+  const clampedDivX = Math.max(0, Math.min(videoWidth - divWidth, idealDivX));
+  const clampedDivY = Math.max(0, Math.min(videoHeight - divHeight, idealDivY));
+
+  logger.log("📦 Div positioning", {
+    idealPosition: { x: idealDivX, y: idealDivY },
+    clampedPosition: { x: clampedDivX, y: clampedDivY },
+    divSize: { width: divWidth, height: divHeight },
+    contentSize: { width: actualContentWidth, height: totalTextHeight },
+    padding: { x: scaledPaddingX, y: scaledPaddingY },
+  });
+
+  // Draw background if specified
   if (overlay.backgroundColor && overlay.backgroundColor !== "transparent") {
-    const scaledPadding = Math.round(8 * scaleFactor);
-    let bgX = alignedX - scaledPadding;
-    let bgY = y - scaledFontSize - scaledPadding;
-    let bgWidth = Math.min(maxLineWidth, scaledMaxWidth) + scaledPadding * 2;
-    let bgHeight = totalTextHeight + scaledPadding * 2;
-
-    // Adjust background position based on alignment
-    if (overlay.alignment === "center") {
-      bgX = alignedX - bgWidth / 2;
-    } else if (overlay.alignment === "right") {
-      bgX = alignedX - bgWidth;
-    }
-
     ctx.fillStyle = overlay.backgroundColor;
-    ctx.fillRect(bgX, bgY, bgWidth, bgHeight);
-
-    // Reset fill style for text
+    logger.log(
+      `🧱 Rendering background at (${clampedDivX}, ${clampedDivY}) with size ${divWidth} x ${divHeight}`
+    );
+    ctx.fillRect(clampedDivX, clampedDivY, divWidth, divHeight);
     ctx.fillStyle = overlay.color;
   }
 
-  // Render each line of wrapped text
-  wrappedLines.forEach((line, lineIndex) => {
-    const currentY = y + lineIndex * scaledLineHeight;
+  // Calculate content area position (inside padding)
+  const contentAreaX = clampedDivX + scaledPaddingX;
+  const contentAreaY = clampedDivY + scaledPaddingY;
 
-    // Render text with letter spacing
+  // Calculate text position based on alignment within content area
+  let textX = contentAreaX;
+  switch (overlay.alignment) {
+    case "left":
+      textX = contentAreaX;
+      break;
+    case "center":
+      textX = contentAreaX + actualContentWidth / 2;
+      break;
+    case "right":
+      textX = contentAreaX + actualContentWidth;
+      break;
+  }
+
+  // Set text alignment for ctx.fillText
+  ctx.textAlign = overlay.alignment;
+
+  logger.log("🧭 Text positioning", {
+    alignment: overlay.alignment,
+    contentAreaX,
+    textX,
+    actualContentWidth,
+  });
+
+  // Render each line of text
+  wrappedLines.forEach((line, lineIndex) => {
+    const textY = contentAreaY + scaledFontSize + lineIndex * scaledLineHeight;
+
     if (scaledLetterSpacing > 0) {
+      logger.log(`🖋️ Rendering with letter spacing at line ${lineIndex + 1}`);
       renderTextWithSpacing(
         ctx,
         line,
-        alignedX,
-        currentY,
+        textX,
+        textY,
         scaledLetterSpacing,
         overlay.alignment,
-        scaledMaxWidth
+        actualContentWidth
       );
     } else {
-      // Use canvas maxWidth parameter for built-in text fitting
-      if (resolvedMaxWidth > 0) {
-        ctx.fillText(line, alignedX, currentY, resolvedMaxWidth * scaleFactor);
-      } else {
-        ctx.fillText(line, alignedX, currentY);
-      }
+      logger.log(`🖋️ Rendering line ${lineIndex + 1} using fillText`);
+      ctx.fillText(line, textX, textY, actualContentWidth);
     }
 
-    // Underline rendering for each line with scaling
+    // Draw underline if specified
     if (overlay.underline) {
       const lineWidth = measureTextWithSpacing(ctx, line, scaledLetterSpacing);
-      const actualWidth = Math.min(lineWidth, scaledMaxWidth);
-      const underlineY = currentY + Math.round(3 * scaleFactor);
+      const actualLineWidth = Math.min(lineWidth, actualContentWidth);
+      const underlineY = textY + Math.round(3 * scaleFactor);
 
-      let underlineX = alignedX;
+      let underlineX = textX;
       if (overlay.alignment === "center") {
-        underlineX = alignedX - actualWidth / 2;
+        underlineX = textX - actualLineWidth / 2;
       } else if (overlay.alignment === "right") {
-        underlineX = alignedX - actualWidth;
+        underlineX = textX - actualLineWidth;
       }
+
+      logger.log(
+        `🧵 Drawing underline from (${underlineX}, ${underlineY}) to (${
+          underlineX + actualLineWidth
+        }, ${underlineY})`
+      );
 
       ctx.strokeStyle = overlay.color;
       ctx.lineWidth = Math.round(2 * scaleFactor);
       ctx.beginPath();
       ctx.moveTo(underlineX, underlineY);
-      ctx.lineTo(underlineX + actualWidth, underlineY);
+      ctx.lineTo(underlineX + actualLineWidth, underlineY);
       ctx.stroke();
     }
   });
 
-  // Reset global alpha
   ctx.globalAlpha = 1.0;
+  logger.log("✅ Text overlay rendering completed.\n");
 }
 
 /**
@@ -575,13 +602,6 @@ function renderTextWithSpacing(
   const actualWidth = Math.min(totalWidth, maxWidth);
 
   let currentX = x;
-
-  // Adjust starting position based on alignment
-  if (alignment === "center") {
-    currentX = x - actualWidth / 2;
-  } else if (alignment === "right") {
-    currentX = x - actualWidth;
-  }
 
   // If text is wider than maxWidth, we need to compress the spacing
   const compressionRatio =
@@ -891,6 +911,8 @@ async function processClipForExportWithCanvas(
         "[v]",
         "-map",
         "0:a?",
+        "-s",
+        `${metadata.dimensions.width}x${metadata.dimensions.height}`,
         "-c:v",
         "libx264",
         "-c:a",
