@@ -37,25 +37,20 @@ import { useDisclosure } from "@/hooks/use-disclosure";
 import { DEFAULT_ASPECT_RATIO, DEFAULT_CROP_MODE } from "@/constants/app";
 import { Timeline } from "@/components/timeline";
 import { TimelineSkeleton } from "@/components/timeline-skeleton";
-import { ExportNamingDialog } from "@/components/ui/export-naming-dialog";
+import { ExportNamingDialog } from "@/components/export-naming-dialog";
+import { calculateMaxWidth } from "@/hooks/use-text-overlays";
 
 interface ClipEditorProps {
   clip: ClipMarker | null;
 }
 
-type ClipToolType = "clips" | "text" | "audio" | "export";
+type ClipToolType = "clips" | "text" | "audio";
 
 const ClipEditor = ({ clip }: ClipEditorProps) => {
   const [duration, setDuration] = useState(0);
 
   const [audioTracks, setAudioTracks] = useState<AudioTrack[]>([]);
-  const [exportSettings, setExportSettings] = useState<ExportSettings>({
-    format: "mp4",
-    quality: "high",
-    resolution: "1080p",
-    fps: 60,
-    bitrate: 8000,
-  });
+
   const [isExporting, setIsExporting] = useState(false);
   const [activeTab, setActiveTab] = useState<ClipToolType>("clips");
   const [zoomLevel, setZoomLevel] = useState(1);
@@ -117,7 +112,7 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
     trace.style.height = `${height}px`;
     trace.style.backgroundColor = "rgba(255, 0, 0, 0.3)";
     trace.style.pointerEvents = "none";
-    trace.style.zIndex = "99";
+    trace.style.zIndex = "15";
   }, []);
 
   const loadClipVideo = useCallback(async (): Promise<string | null> => {
@@ -273,8 +268,18 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
     setAudioTracks(audioTracks.filter((track) => track.id !== id));
   };
 
-  const handleExport = async () => {
-    if (!clip) return;
+  const handleExport = async (
+    outputName: string,
+    {
+      preset,
+      crf,
+      fps,
+      format,
+    }: Pick<ExportSettings, "preset" | "crf" | "fps" | "format">
+  ) => {
+    const video = videoRef.current;
+
+    if (!clip || !video) return;
 
     setIsExporting(true);
 
@@ -286,62 +291,7 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
           return reject(new Error("No output path selected"));
         }
 
-        const exportData: ClipExportData = {
-          id: clip.id,
-          startTime: trimRef.current.start || 0,
-          endTime: trimRef.current.end || duration,
-          outputName: `${clip.id}`,
-          outputPath,
-          textOverlays: textOverlays.filter((overlay) => overlay.visible),
-          audioTracks: audioTracks.filter((track) => track.visible),
-          exportSettings: {
-            ...exportSettings,
-            convertAspectRatio: selectedConvertAspectRatio.current || undefined,
-            cropMode: selectedCropMode.current,
-          },
-        };
-
-        const result = await window.electronAPI.exportClip(exportData);
-
-        if (result.success) {
-          closeAspectRatioModal();
-          resolve(result.outputPath);
-        } else {
-          reject(new Error("Export failed"));
-        }
-      } catch (error) {
-        logger.error("Export error:", error);
-        reject(error);
-      } finally {
-        setIsExporting(false);
-      }
-    });
-
-    toast.promise(promise, {
-      loading: "Exporting clip...",
-      success: (outputPath) => {
-        return `Clip exported successfully to: ${outputPath}`;
-      },
-      error: (err) => {
-        const normalizedError = normalizeError(err);
-        return `Export failed: ${normalizedError.message}`;
-      },
-      id: clip.id,
-    });
-  };
-
-  const handleFinalExport = async (outputName: string) => {
-    if (!clip) return;
-
-    setIsExporting(true);
-
-    const promise = new Promise<string>(async (resolve, reject) => {
-      try {
-        const outputPath = await window.electronAPI.selectOutputFolder();
-        if (!outputPath) {
-          setIsExporting(false);
-          return reject(new Error("No output path selected"));
-        }
+        const { width, height } = getVideoBoundingBox(video);
 
         const exportData: ClipExportData = {
           id: clip.id,
@@ -352,10 +302,14 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
           textOverlays: textOverlays.filter((overlay) => overlay.visible),
           audioTracks: audioTracks.filter((track) => track.visible),
           exportSettings: {
-            ...exportSettings,
+            preset,
+            crf,
+            fps,
+            format,
             convertAspectRatio: selectedConvertAspectRatio.current || undefined,
             cropMode: selectedCropMode.current,
           },
+          clientDisplaySize: { width, height },
         };
 
         const result = await window.electronAPI.exportClip(exportData);
@@ -788,120 +742,6 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
                   ))}
                 </div>
               )}
-
-              {activeTab === "export" && (
-                <div className="space-y-4">
-                  <h3 className="text-base font-semibold text-foreground-default">
-                    Export Settings
-                  </h3>
-
-                  <div className="space-y-3">
-                    <div>
-                      <label className="block text-xs font-medium text-foreground-default mb-1">
-                        Format
-                      </label>
-                      <select
-                        value={exportSettings.format}
-                        onChange={(e) =>
-                          setExportSettings({
-                            ...exportSettings,
-                            format: e.target.value as ExportSettings["format"],
-                          })
-                        }
-                        className="w-full bg-surface-secondary rounded-md px-3 py-1.5 text-foreground-default border border-gray-700/50 text-xs"
-                      >
-                        <option value="mp4">MP4</option>
-                        <option value="webm">WebM</option>
-                        <option value="mov">MOV</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-foreground-default mb-1">
-                        Quality
-                      </label>
-                      <select
-                        value={exportSettings.quality}
-                        onChange={(e) =>
-                          setExportSettings({
-                            ...exportSettings,
-                            quality: e.target
-                              .value as ExportSettings["quality"],
-                          })
-                        }
-                        className="w-full bg-surface-secondary rounded-md px-3 py-1.5 text-foreground-default border border-gray-700/50 text-xs"
-                      >
-                        <option value="low">Low</option>
-                        <option value="medium">Medium</option>
-                        <option value="high">High</option>
-                        <option value="ultra">Ultra</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-foreground-default mb-1">
-                        Resolution
-                      </label>
-                      <select
-                        value={exportSettings.resolution}
-                        onChange={(e) =>
-                          setExportSettings({
-                            ...exportSettings,
-                            resolution: e.target
-                              .value as ExportSettings["resolution"],
-                          })
-                        }
-                        className="w-full bg-surface-secondary rounded-md px-3 py-1.5 text-foreground-default border border-gray-700/50 text-xs"
-                      >
-                        <option value="720p">720p</option>
-                        <option value="1080p">1080p</option>
-                        <option value="1440p">1440p</option>
-                        <option value="4k">4K</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-foreground-default mb-1">
-                        Frame Rate
-                      </label>
-                      <select
-                        value={exportSettings.fps}
-                        onChange={(e) =>
-                          setExportSettings({
-                            ...exportSettings,
-                            fps: parseInt(
-                              e.target.value
-                            ) as ExportSettings["fps"],
-                          })
-                        }
-                        className="w-full bg-surface-secondary rounded-md px-3 py-1.5 text-foreground-default border border-gray-700/50 text-xs"
-                      >
-                        <option value="30">30 FPS</option>
-                        <option value="60">60 FPS</option>
-                      </select>
-                    </div>
-
-                    <div>
-                      <label className="block text-xs font-medium text-foreground-default mb-1">
-                        Bitrate (kbps)
-                      </label>
-                      <Input
-                        type="number"
-                        min="1000"
-                        max="50000"
-                        value={exportSettings.bitrate}
-                        onChange={(e) =>
-                          setExportSettings({
-                            ...exportSettings,
-                            bitrate: parseInt(e.target.value),
-                          })
-                        }
-                        className="px-3 py-1.5 text-xs"
-                      />
-                    </div>
-                  </div>
-                </div>
-              )}
             </div>
           </div>
         </div>
@@ -915,7 +755,7 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
         <ExportNamingDialog
           isOpen={isExportNamingModalOpen}
           onOpenChange={closeExportNamingModal}
-          onExport={handleFinalExport}
+          onExport={handleExport}
         />
       </div>
     </div>

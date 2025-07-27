@@ -56,10 +56,21 @@ export type CropMode = "letterbox" | "crop" | "stretch";
 
 export interface ExportSettings {
   format: "mp4" | "webm" | "mov";
-  quality: "low" | "medium" | "high" | "ultra";
-  resolution: "720p" | "1080p" | "1440p" | "4k";
-  fps: 30 | 60;
-  bitrate: number;
+  resolution?: "720p" | "1080p" | "2K" | "4K";
+  fps: 24 | 30 | 60;
+  bitrate?: "recommended" | "high" | "custom";
+  customBitrateKbps?: number;
+  preset:
+    | "ultrafast"
+    | "superfast"
+    | "veryfast"
+    | "faster"
+    | "fast"
+    | "medium"
+    | "slow"
+    | "slower"
+    | "veryslow";
+  crf: number;
   convertAspectRatio?: string;
   cropMode?: CropMode;
 }
@@ -76,6 +87,7 @@ export interface ClipExportData {
   textOverlays?: TextOverlay[];
   audioTracks?: AudioTrack[];
   exportSettings: ExportSettings;
+  clientDisplaySize: { width: number; height: number };
 }
 
 /**

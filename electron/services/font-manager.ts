@@ -1,7 +1,7 @@
 import * as path from "path";
 import * as fs from "fs";
 import * as os from "os";
-import { registerFont } from "canvas";
+import { deregisterAllFonts, registerFont } from "canvas";
 import logger from "../../src/utils/logger";
 import { FontDefinition, FontStyle, FontWeight } from "../../src/types/app";
 
@@ -309,10 +309,17 @@ class FontManager {
 
       const familyName = baseName
         .replace(
-          /[-_](regular|bold|light|italic|medium|thin|black|semibold|extrabold|extralight|oblique)/gi,
+          /[-_](regular|bold|light|italic|medium|thin|black|semibold|extrabold|extralight|oblique|[0-9]+pt)/gi,
           ""
         )
         .trim();
+
+      logger.debug("🎨 Font family name parsed", {
+        baseName,
+        familyName,
+        style,
+        weight,
+      });
 
       this.registerCustomFont(fullPath, familyName, weight, style);
     }
@@ -323,6 +330,23 @@ class FontManager {
     for (const def of this.registeredFonts.values()) fonts.add(def.family);
     for (const family of this.systemFonts.keys()) fonts.add(family);
     return Array.from(fonts).sort();
+  }
+
+  cleanup(): void {
+    try {
+      this.registeredFonts.clear();
+      this.systemFonts.clear();
+
+      // Deregister all fonts from Canvas
+      // WARNING: This may cause memory leaks in some versions of node-canvas
+      // See: https://github.com/Automattic/node-canvas/issues/1974
+      deregisterAllFonts();
+      logger.log("🧹 Deregistered all Canvas fonts");
+
+      logger.log("✅ FontManager cleanup completed");
+    } catch (error) {
+      logger.error("❌ FontManager cleanup failed:", error);
+    }
   }
 }
 

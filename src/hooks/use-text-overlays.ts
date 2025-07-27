@@ -1,10 +1,4 @@
-import {
-  useRef,
-  useState,
-  useCallback,
-  RefObject,
-  startTransition,
-} from "react";
+import { useRef, useState, useCallback } from "react";
 import { TextOverlay } from "@/types/app";
 import { getOverlayNormalizedCoords, getVideoBoundingBox } from "@/utils/app";
 import logger from "@/utils/logger";
@@ -20,6 +14,10 @@ interface DragState {
   rafId: number | null;
   finalLeft: number;
   finalTop: number;
+}
+
+export function calculateMaxWidth(value: number): string {
+  return `${Math.round(value * 0.65)}px`;
 }
 
 /**
@@ -82,7 +80,7 @@ export const useTextOverlays = (
         underline: false,
         alignment: "center",
         visible: true,
-        maxWidth: `${videoWidth * 0.65}px`,
+        maxWidth: calculateMaxWidth(videoWidth),
       };
 
       setTextOverlays((prev) => [...prev, newOverlay]);

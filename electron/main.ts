@@ -305,134 +305,220 @@ async function exportClip(
 }
 
 /**
- * Render text overlay on canvas with full styling support including maxWidth
+ * Calculate appropriate scale factor based on video dimensions vs client display size
+ */
+function calculateScaleFactor(
+  videoDimensions: { width: number; height: number },
+  clientDisplaySize: { width: number; height: number }
+): number {
+  // Calculate scale factor based on the ratio of video to display size
+  const videoAspectRatio = videoDimensions.width / videoDimensions.height;
+  const displayAspectRatio = clientDisplaySize.width / clientDisplaySize.height;
+
+  let scaleFactor: number;
+
+  if (Math.abs(videoAspectRatio - displayAspectRatio) < 0.1) {
+    logger.log("📏 Aspect ratios are similar. Scaling based on total area.");
+    // Similar aspect ratios - scale based on area
+    const videoArea = videoDimensions.width * videoDimensions.height;
+    const displayArea = clientDisplaySize.width * clientDisplaySize.height;
+    scaleFactor = Math.sqrt(videoArea / displayArea);
+  } else {
+    logger.log("⚠️ Aspect ratios differ. Scaling based on limiting dimension.");
+    // Different aspect ratios - scale based on the limiting dimension
+    const widthScale = videoDimensions.width / clientDisplaySize.width;
+    const heightScale = videoDimensions.height / clientDisplaySize.height;
+    scaleFactor = Math.max(widthScale, heightScale);
+  }
+
+  logger.log("✅ Scale factor within bounds:", scaleFactor);
+  return scaleFactor;
+}
+
+/**
+ * Render text overlay on canvas
  */
 function renderTextOverlay(
   canvas: Canvas,
   ctx: CanvasRenderingContext2D,
   overlay: TextOverlay,
-  videoDimensions: { width: number; height: number }
+  videoDimensions: { width: number; height: number },
+  scaleFactor: number = 1.0
 ): void {
-  if (!overlay.visible) return;
+  if (!overlay.visible) {
+    logger.log("⛔ Overlay not visible, skipping render.");
+    return;
+  }
 
-  const { width, height } = videoDimensions;
+  const { width: videoWidth, height: videoHeight } = videoDimensions;
+  logger.log(`📐 Video dimensions: ${videoWidth} x ${videoHeight}`);
 
-  const x = overlay.x * width;
-  const y = overlay.y * height;
+  // CSS padding from DraggableTextOverlay: "8px 12px" = top/bottom: 8px, left/right: 12px
+  const basePaddingX = 12;
+  const basePaddingY = 8;
 
+  // Scale padding with scale factor
+  const scaledPaddingX = Math.round(basePaddingX * scaleFactor);
+  const scaledPaddingY = Math.round(basePaddingY * scaleFactor);
+  const scaledFontSize = Math.round(overlay.fontSize * scaleFactor);
+
+  // Set up font for text measurement
   let fontStyle = "";
   if (overlay.italic) fontStyle += "italic ";
   if (overlay.bold) fontStyle += "bold ";
 
+  const weight = overlay.bold ? "700" : "400";
+  const style = overlay.italic ? "italic" : "normal";
+
   const actualFontFamily = fontManager.getFontFamily(
     overlay.fontFamily,
-    overlay.bold ? "700" : "400",
-    overlay.italic ? "italic" : "normal"
+    weight,
+    style
   );
 
-  ctx.font = `${fontStyle}${overlay.fontSize}px "${actualFontFamily}"`;
+  ctx.font =
+    `${style} ${weight} ${scaledFontSize}px "${actualFontFamily}"`.trim();
   ctx.fillStyle = overlay.color;
   ctx.globalAlpha = overlay.opacity;
 
-  logger.log(`🔤 Using font: ${ctx.font} (requested: ${overlay.fontFamily})`);
+  logger.log(`🔤 Using font: ${ctx.font}`);
 
-  const letterSpacing = parseInt(overlay.letterSpacing) || 0;
-  const resolvedMaxWidth = parseFloat(overlay.maxWidth as string);
-  const maxWidth = resolvedMaxWidth > 0 ? resolvedMaxWidth : width - x; // Use maxWidth or remaining screen width
-
-  // Text alignment
-  ctx.textAlign = overlay.alignment;
-  let alignedX = x;
-  if (overlay.alignment === "center") {
-    alignedX = x;
-    ctx.textAlign = "center";
-  } else if (overlay.alignment === "right") {
-    alignedX = x;
-    ctx.textAlign = "right";
-  }
-
-  // Handle text wrapping and maxWidth
-  const wrappedLines = wrapText(ctx, overlay.text, maxWidth, letterSpacing);
-  const lineHeight = overlay.fontSize * 1.2; // Standard line height multiplier
-
-  // Calculate total text block dimensions for background
-  const totalTextHeight = wrappedLines.length * lineHeight;
-  const maxLineWidth = Math.max(
-    ...wrappedLines.map((line) =>
-      measureTextWithSpacing(ctx, line, letterSpacing)
-    )
+  const scaledLetterSpacing = Math.round(
+    (parseInt(overlay.letterSpacing) || 0) * scaleFactor
   );
 
-  // Background rendering (if specified)
+  // Calculate content area width (maxWidth minus padding)
+  const resolvedMaxWidth = parseFloat(overlay.maxWidth as string);
+  const scaledMaxWidth =
+    resolvedMaxWidth > 0 ? resolvedMaxWidth * scaleFactor : videoWidth * 0.8;
+  const contentAreaWidth = scaledMaxWidth - 2 * scaledPaddingX;
+
+  // Wrap text based on content area width
+  const wrappedLines = wrapText(
+    ctx,
+    overlay.text,
+    contentAreaWidth,
+    scaledLetterSpacing
+  );
+
+  // Calculate actual content dimensions
+  const maxLineWidth = Math.max(
+    ...wrappedLines.map((line) =>
+      measureTextWithSpacing(ctx, line, scaledLetterSpacing)
+    )
+  );
+  const actualContentWidth = Math.min(maxLineWidth, contentAreaWidth);
+  const scaledLineHeight = scaledFontSize * 1.2;
+  const totalTextHeight = wrappedLines.length * scaledLineHeight;
+
+  // Calculate div dimensions (content + padding)
+  const divWidth = actualContentWidth + 2 * scaledPaddingX;
+  const divHeight = totalTextHeight + 2 * scaledPaddingY;
+
+  // Position div's border box at normalized coordinates
+  const idealDivX = overlay.x * videoWidth;
+  const idealDivY = overlay.y * videoHeight;
+
+  // Clamp div to prevent clipping
+  const clampedDivX = Math.max(0, Math.min(videoWidth - divWidth, idealDivX));
+  const clampedDivY = Math.max(0, Math.min(videoHeight - divHeight, idealDivY));
+
+  logger.log("📦 Div positioning", {
+    idealPosition: { x: idealDivX, y: idealDivY },
+    clampedPosition: { x: clampedDivX, y: clampedDivY },
+    divSize: { width: divWidth, height: divHeight },
+    contentSize: { width: actualContentWidth, height: totalTextHeight },
+    padding: { x: scaledPaddingX, y: scaledPaddingY },
+  });
+
+  // Draw background if specified
   if (overlay.backgroundColor && overlay.backgroundColor !== "transparent") {
-    const padding = 8;
-    let bgX = alignedX - padding;
-    let bgY = y - overlay.fontSize - padding;
-    let bgWidth = Math.min(maxLineWidth, maxWidth) + padding * 2;
-    let bgHeight = totalTextHeight + padding * 2;
-
-    // Adjust background position based on alignment
-    if (overlay.alignment === "center") {
-      bgX = alignedX - bgWidth / 2;
-    } else if (overlay.alignment === "right") {
-      bgX = alignedX - bgWidth;
-    }
-
     ctx.fillStyle = overlay.backgroundColor;
-    ctx.fillRect(bgX, bgY, bgWidth, bgHeight);
-
-    // Reset fill style for text
+    logger.log(
+      `🧱 Rendering background at (${clampedDivX}, ${clampedDivY}) with size ${divWidth} x ${divHeight}`
+    );
+    ctx.fillRect(clampedDivX, clampedDivY, divWidth, divHeight);
     ctx.fillStyle = overlay.color;
   }
 
-  // Render each line of wrapped text
-  wrappedLines.forEach((line, lineIndex) => {
-    const currentY = y + lineIndex * lineHeight;
+  // Calculate content area position (inside padding)
+  const contentAreaX = clampedDivX + scaledPaddingX;
+  const contentAreaY = clampedDivY + scaledPaddingY;
 
-    // Render text with letter spacing
-    if (letterSpacing > 0) {
+  // Calculate text position based on alignment within content area
+  let textX = contentAreaX;
+  switch (overlay.alignment) {
+    case "left":
+      textX = contentAreaX;
+      break;
+    case "center":
+      textX = contentAreaX + actualContentWidth / 2;
+      break;
+    case "right":
+      textX = contentAreaX + actualContentWidth;
+      break;
+  }
+
+  // Set text alignment for ctx.fillText
+  ctx.textAlign = overlay.alignment;
+
+  logger.log("🧭 Text positioning", {
+    alignment: overlay.alignment,
+    contentAreaX,
+    textX,
+    actualContentWidth,
+  });
+
+  // Render each line of text
+  wrappedLines.forEach((line, lineIndex) => {
+    const textY = contentAreaY + scaledFontSize + lineIndex * scaledLineHeight;
+
+    if (scaledLetterSpacing > 0) {
+      logger.log(`🖋️ Rendering with letter spacing at line ${lineIndex + 1}`);
       renderTextWithSpacing(
         ctx,
         line,
-        alignedX,
-        currentY,
-        letterSpacing,
+        textX,
+        textY,
+        scaledLetterSpacing,
         overlay.alignment,
-        maxWidth
+        actualContentWidth
       );
     } else {
-      // Use canvas maxWidth parameter for built-in text fitting
-      if (resolvedMaxWidth > 0) {
-        ctx.fillText(line, alignedX, currentY, resolvedMaxWidth);
-      } else {
-        ctx.fillText(line, alignedX, currentY);
-      }
+      logger.log(`🖋️ Rendering line ${lineIndex + 1} using fillText`);
+      ctx.fillText(line, textX, textY, actualContentWidth);
     }
 
-    // Underline rendering for each line
+    // Draw underline if specified
     if (overlay.underline) {
-      const lineWidth = measureTextWithSpacing(ctx, line, letterSpacing);
-      const actualWidth = Math.min(lineWidth, maxWidth);
-      const underlineY = currentY + 3;
+      const lineWidth = measureTextWithSpacing(ctx, line, scaledLetterSpacing);
+      const actualLineWidth = Math.min(lineWidth, actualContentWidth);
+      const underlineY = textY + Math.round(3 * scaleFactor);
 
-      let underlineX = alignedX;
+      let underlineX = textX;
       if (overlay.alignment === "center") {
-        underlineX = alignedX - actualWidth / 2;
+        underlineX = textX - actualLineWidth / 2;
       } else if (overlay.alignment === "right") {
-        underlineX = alignedX - actualWidth;
+        underlineX = textX - actualLineWidth;
       }
 
+      logger.log(
+        `🧵 Drawing underline from (${underlineX}, ${underlineY}) to (${
+          underlineX + actualLineWidth
+        }, ${underlineY})`
+      );
+
       ctx.strokeStyle = overlay.color;
-      ctx.lineWidth = 2;
+      ctx.lineWidth = Math.round(2 * scaleFactor);
       ctx.beginPath();
       ctx.moveTo(underlineX, underlineY);
-      ctx.lineTo(underlineX + actualWidth, underlineY);
+      ctx.lineTo(underlineX + actualLineWidth, underlineY);
       ctx.stroke();
     }
   });
 
-  // Reset global alpha
   ctx.globalAlpha = 1.0;
+  logger.log("✅ Text overlay rendering completed.\n");
 }
 
 /**
@@ -456,17 +542,25 @@ function wrapText(
       // Current line is full, start a new line
       lines.push(currentLine);
       currentLine = word;
+
+      // Check if the single word itself is too wide - if so, force it anyway
+      const wordWidth = measureTextWithSpacing(ctx, word, letterSpacing);
+      if (wordWidth > maxWidth) {
+        // Word is too long, but we have to include it
+        lines.push(word);
+        currentLine = "";
+      }
     } else {
       currentLine = testLine;
     }
   }
 
-  // Add the last line
+  // Add the last line if it exists
   if (currentLine) {
     lines.push(currentLine);
   }
 
-  // Handle case where no words fit (shouldn't happen with reasonable maxWidth)
+  // Ensure we always return at least one line
   return lines.length > 0 ? lines : [text];
 }
 
@@ -508,13 +602,6 @@ function renderTextWithSpacing(
   const actualWidth = Math.min(totalWidth, maxWidth);
 
   let currentX = x;
-
-  // Adjust starting position based on alignment
-  if (alignment === "center") {
-    currentX = x - actualWidth / 2;
-  } else if (alignment === "right") {
-    currentX = x - actualWidth;
-  }
 
   // If text is wider than maxWidth, we need to compress the spacing
   const compressionRatio =
@@ -753,6 +840,7 @@ async function processClipForExportWithCanvas(
   data: ClipExportData
 ): Promise<{ success: boolean; outputPath: string }> {
   const { blob, metadata } = response;
+  const { exportSettings, clientDisplaySize } = data;
 
   try {
     if (!blob || !metadata) throw new Error("Missing blob or metadata");
@@ -761,12 +849,20 @@ async function processClipForExportWithCanvas(
       clipId: data.id,
       videoDimensions: metadata.dimensions,
       overlayCount: data.textOverlays?.length || 0,
+      exportSettings: {
+        preset: exportSettings.preset,
+        crf: exportSettings.crf,
+        fps: exportSettings.fps,
+        format: exportSettings.format,
+      },
+      clientDisplaySize,
     });
 
     const tempInput = path.join(bufferDir, `temp_clip_${Date.now()}.webm`);
     fs.writeFileSync(tempInput, Buffer.from(blob));
 
-    const output = path.join(data.outputPath, `${data.outputName}.mp4`);
+    const outputFileName = `${data.outputName}.${exportSettings.format}`;
+    const output = path.join(data.outputPath, outputFileName);
     const ffmpegPath = ffmpegStatic;
     if (!ffmpegPath) throw new Error("FFmpeg binary not found");
 
@@ -774,8 +870,11 @@ async function processClipForExportWithCanvas(
     const endSeconds = data.endTime / 1000;
     const duration = endSeconds - startSeconds;
 
-    const videoFPS = await getVideoFrameRate(tempInput);
-    logger.log("🎯 Using video FPS for overlay generation:", videoFPS);
+    const targetFPS = exportSettings.fps;
+    logger.log(
+      "🎯 Using target FPS for overlay generation and export:",
+      targetFPS
+    );
 
     // If we have text overlays, create overlay frames
     if (data.textOverlays && data.textOverlays.length > 0) {
@@ -785,17 +884,13 @@ async function processClipForExportWithCanvas(
       );
       fs.mkdirSync(overlayFramesDir, { recursive: true });
 
-      const optimizedFPS = calculateOptimalOverlayFPS(
-        data.textOverlays,
-        videoFPS
-      );
-
       await generateOverlayFrames(
         data.textOverlays,
         metadata.dimensions,
         duration,
         overlayFramesDir,
-        optimizedFPS
+        targetFPS,
+        clientDisplaySize
       );
 
       // With overlay filter
@@ -807,19 +902,29 @@ async function processClipForExportWithCanvas(
         "-t",
         duration.toString(),
         "-framerate",
-        "30",
+        targetFPS.toString(),
         "-i",
         path.join(overlayFramesDir, "overlay_%04d.png"),
         "-filter_complex",
-        "[0:v][1:v]overlay=0:0:enable='between(t,0," + duration + ")'",
+        `[0:v][1:v]overlay=0:0:enable='between(t,0,${duration})'[v]`,
+        "-map",
+        "[v]",
+        "-map",
+        "0:a?",
+        "-s",
+        `${metadata.dimensions.width}x${metadata.dimensions.height}`,
         "-c:v",
         "libx264",
         "-c:a",
         "aac",
         "-preset",
-        "fast",
+        exportSettings.preset,
         "-crf",
-        "23",
+        exportSettings.crf.toString(),
+        "-r",
+        targetFPS.toString(),
+        "-f",
+        exportSettings.format,
         "-y",
         output,
       ];
@@ -871,9 +976,13 @@ async function processClipForExportWithCanvas(
         "-c:a",
         "aac",
         "-preset",
-        "fast",
+        exportSettings.preset,
         "-crf",
-        "23",
+        exportSettings.crf.toString(),
+        "-r",
+        targetFPS.toString(),
+        "-f",
+        exportSettings.format,
         "-y",
         output,
       ];
@@ -896,41 +1005,6 @@ async function processClipForExportWithCanvas(
   } catch (error) {
     logger.error("💥 Canvas export failed:", error);
     throw error;
-  }
-}
-
-/**
- * Calculate optimal FPS for overlay generation based on content analysis
- */
-function calculateOptimalOverlayFPS(
-  overlays: TextOverlay[],
-  videoFPS: number
-): number {
-  const hasAnimatedText = overlays.some((overlay) => {
-    const duration = overlay.endTime - overlay.startTime;
-    return duration < 5000; // Short duration text might need higher precision
-  });
-
-  const hasMultipleOverlays = overlays.length > 3;
-  const hasComplexStyling = overlays.some(
-    (overlay) =>
-      overlay.backgroundColor !== "transparent" ||
-      overlay.underline ||
-      overlay.italic ||
-      parseInt(overlay.letterSpacing) > 0
-  );
-
-  if (videoFPS >= 60) {
-    // High FPS video - match it for smooth overlays
-    return hasAnimatedText ? 60 : 30;
-  } else if (videoFPS >= 30) {
-    // Standard FPS video
-    return hasComplexStyling || hasMultipleOverlays
-      ? videoFPS
-      : Math.min(videoFPS, 30);
-  } else {
-    // Low FPS video (24fps cinema, etc.)
-    return videoFPS;
   }
 }
 
@@ -988,7 +1062,8 @@ async function generateOverlayFrames(
   videoDimensions: { width: number; height: number },
   duration: number,
   outputDir: string,
-  fps: number
+  fps: number,
+  clientDisplaySize: { width: number; height: number }
 ): Promise<void> {
   const totalFrames = Math.ceil(duration * fps);
   const canvas: Canvas = createCanvas(
@@ -997,44 +1072,131 @@ async function generateOverlayFrames(
   );
   const ctx: CanvasRenderingContext2D = canvas.getContext("2d");
 
-  logger.log("🎨 Generating overlay frames", {
+  const scaleFactor = calculateScaleFactor(videoDimensions, clientDisplaySize);
+
+  logger.log("🧠 Generating overlay frames", {
     totalFrames,
     fps,
     duration,
     dimensions: videoDimensions,
+    clientDisplaySize,
+    scaleFactor,
   });
 
-  for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+  // Calculate transition points where overlay visibility changes
+  const transitionPoints = new Set<number>();
+
+  overlays.forEach((overlay) => {
+    const startFrame = Math.max(
+      0,
+      Math.floor((overlay.startTime / 1000) * fps)
+    );
+    const endFrame = Math.min(
+      totalFrames - 1,
+      Math.ceil((overlay.endTime / 1000) * fps)
+    );
+
+    transitionPoints.add(startFrame);
+    transitionPoints.add(endFrame + 1); // Frame after end
+  });
+
+  // Includes first and last frame
+  transitionPoints.add(0);
+  transitionPoints.add(totalFrames - 1);
+
+  const transitionArray = Array.from(transitionPoints).sort((a, b) => a - b);
+  logger.log("🔑 Transition points identified:", transitionArray);
+
+  // Unique overlay states
+  const overlayStates = new Map<string, Buffer>();
+
+  for (const frameIndex of transitionArray) {
+    if (frameIndex >= totalFrames) continue;
+
     const currentTimeMs = (frameIndex / fps) * 1000;
 
     // Clear canvas with transparent background
     ctx.clearRect(0, 0, videoDimensions.width, videoDimensions.height);
 
-    // Render overlays that should be visible at this time
-    overlays.forEach((overlay) => {
-      if (
+    // Determines visible overlays at this time
+    const visibleOverlays = overlays.filter(
+      (overlay) =>
         overlay.visible &&
         currentTimeMs >= overlay.startTime &&
         currentTimeMs <= overlay.endTime
-      ) {
-        renderTextOverlay(canvas, ctx, overlay, videoDimensions);
-      }
-    });
-
-    // Save frame as PNG
-    const frameBuffer = canvas.toBuffer("image/png");
-    const framePath = path.join(
-      outputDir,
-      `overlay_${frameIndex.toString().padStart(4, "0")}.png`
     );
-    fs.writeFileSync(framePath, frameBuffer);
 
-    if (frameIndex % 30 === 0) {
-      logger.log(`📸 Generated frame ${frameIndex}/${totalFrames}`);
+    // State key based on visible overlays
+    const stateKey = visibleOverlays
+      .map((o) => `${o.text}-${o.x}-${o.y}-${o.startTime}-${o.endTime}`)
+      .join("|");
+
+    // Only generate new buffer if state hasn't been seen before
+    if (!overlayStates.has(stateKey)) {
+      // Render overlays
+      visibleOverlays.forEach((overlay) => {
+        renderTextOverlay(canvas, ctx, overlay, videoDimensions, scaleFactor);
+      });
+
+      const frameBuffer = canvas.toBuffer("image/png");
+      overlayStates.set(stateKey, frameBuffer);
+
+      logger.log(
+        `🎨 Generated unique overlay state: ${stateKey.substring(0, 50)}...`
+      );
     }
   }
 
-  logger.log("✅ All overlay frames generated");
+  logger.log(`📊 Generated ${overlayStates.size} unique overlay states`);
+
+  // Map each frame to its appropriate overlay state
+  let currentTransitionIndex = 0;
+
+  for (let frameIndex = 0; frameIndex < totalFrames; frameIndex++) {
+    // Check if we need to move to next transition
+    if (
+      currentTransitionIndex < transitionArray.length - 1 &&
+      frameIndex >= transitionArray[currentTransitionIndex + 1]
+    ) {
+      currentTransitionIndex++;
+    }
+
+    const currentTimeMs = (frameIndex / fps) * 1000;
+    const visibleOverlays = overlays.filter(
+      (overlay) =>
+        overlay.visible &&
+        currentTimeMs >= overlay.startTime &&
+        currentTimeMs <= overlay.endTime
+    );
+
+    const stateKey = visibleOverlays
+      .map((o) => `${o.text}-${o.x}-${o.y}-${o.startTime}-${o.endTime}`)
+      .join("|");
+
+    const frameBuffer = overlayStates.get(stateKey) || overlayStates.get("");
+
+    if (frameBuffer) {
+      const framePath = path.join(
+        outputDir,
+        `overlay_${frameIndex.toString().padStart(4, "0")}.png`
+      );
+      fs.writeFileSync(framePath, frameBuffer);
+    }
+
+    // Log progress every 60 frames
+    if (frameIndex % 60 === 0) {
+      logger.log(`📸 Processed frame ${frameIndex}/${totalFrames}`);
+    }
+  }
+
+  logger.log("✅ Overlay frames generated with state-based optimization", {
+    totalFrames,
+    uniqueStates: overlayStates.size,
+    optimizationRatio: `${(
+      (1 - overlayStates.size / totalFrames) *
+      100
+    ).toFixed(1)}%`,
+  });
 }
 
 /**
@@ -1554,6 +1716,7 @@ app
     if (process.platform !== "darwin") app.quit();
   })
   .on("will-quit", () => {
+    fontManager.cleanup();
     globalShortcut.unregisterAll();
     if (isRecording) stopRecording();
     cleanOldBuffers();
