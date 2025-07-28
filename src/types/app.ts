@@ -56,9 +56,9 @@ export type CropMode = "letterbox" | "crop" | "stretch";
 
 export interface ExportSettings {
   format: "mp4" | "webm" | "mov";
-  resolution?: "720p" | "1080p" | "2K" | "4K";
+  resolution: "720p" | "1080p" | "1440p" | "4k";
   fps: 24 | 30 | 60;
-  bitrate?: "recommended" | "high" | "custom";
+  bitrate: "recommended" | "high" | "min" | "custom";
   customBitrateKbps?: number;
   preset:
     | "ultrafast"
@@ -88,6 +88,7 @@ export interface ClipExportData {
   audioTracks?: AudioTrack[];
   exportSettings: ExportSettings;
   clientDisplaySize: { width: number; height: number };
+  targetResolution?: { width: number; height: number };
 }
 
 /**

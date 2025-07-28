@@ -57,7 +57,7 @@ class RecordingService {
             minHeight: 720,
             maxHeight: 1080,
             minFrameRate: 30,
-            maxFrameRate: 60,
+            maxFrameRate: 30,
           },
         } as MediaTrackConstraints,
       });
@@ -115,7 +115,7 @@ class RecordingService {
 
       this.mediaRecorder = new MediaRecorder(combinedStream, {
         mimeType: isSupported ? mimeType : "video/webm",
-        bitsPerSecond: 8000000, // 8 Mbps
+        bitsPerSecond: 5100000, // 5.1 Mbps
       });
 
       logger.log(
@@ -126,10 +126,10 @@ class RecordingService {
       this.mediaRecorder.ondataavailable = (event: BlobEvent): void => {
         if (event.data.size > 0 && this.startTime !== null) {
           const timestamp = Date.now() - this.startTime;
-          this.recordedChunks.push({
-            data: event.data,
-            timestamp: timestamp,
-          });
+          // this.recordedChunks.push({
+          //   data: event.data,
+          //   timestamp: timestamp,
+          // });
           logger.log("📦 Chunk received:", {
             size: event.data.size,
             timestamp: timestamp,

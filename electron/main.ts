@@ -31,6 +31,7 @@ import logger from "../src/utils/logger";
 import DesktopCaptureManager from "./services/desktop-capture";
 import fontManager from "./services/font-manager";
 import { normalizeError } from "../src/utils/error-utils";
+import { EXPORT_BITRATE_MAP } from "../src/constants/app";
 
 let mainWindow: BrowserWindow | null = null;
 let twitchWindow: BrowserWindow | null = null;
@@ -343,15 +344,17 @@ function renderTextOverlay(
   ctx: CanvasRenderingContext2D,
   overlay: TextOverlay,
   videoDimensions: { width: number; height: number },
-  scaleFactor: number = 1.0
+  scaleFactor: number = 1.0,
+  targetResolution?: { width: number; height: number }
 ): void {
   if (!overlay.visible) {
     logger.log("⛔ Overlay not visible, skipping render.");
     return;
   }
 
-  const { width: videoWidth, height: videoHeight } = videoDimensions;
-  logger.log(`📐 Video dimensions: ${videoWidth} x ${videoHeight}`);
+  const renderDimensions = targetResolution || videoDimensions;
+  const { width: renderWidth, height: renderHeight } = renderDimensions;
+  logger.log(`📐 Video dimensions: ${renderWidth} x ${renderHeight}`);
 
   // CSS padding from DraggableTextOverlay: "8px 12px" = top/bottom: 8px, left/right: 12px
   const basePaddingX = 12;
@@ -390,7 +393,7 @@ function renderTextOverlay(
   // Calculate content area width (maxWidth minus padding)
   const resolvedMaxWidth = parseFloat(overlay.maxWidth as string);
   const scaledMaxWidth =
-    resolvedMaxWidth > 0 ? resolvedMaxWidth * scaleFactor : videoWidth * 0.8;
+    resolvedMaxWidth > 0 ? resolvedMaxWidth * scaleFactor : renderWidth * 0.8;
   const contentAreaWidth = scaledMaxWidth - 2 * scaledPaddingX;
 
   // Wrap text based on content area width
@@ -416,12 +419,15 @@ function renderTextOverlay(
   const divHeight = totalTextHeight + 2 * scaledPaddingY;
 
   // Position div's border box at normalized coordinates
-  const idealDivX = overlay.x * videoWidth;
-  const idealDivY = overlay.y * videoHeight;
+  const idealDivX = overlay.x * renderWidth;
+  const idealDivY = overlay.y * renderHeight;
 
   // Clamp div to prevent clipping
-  const clampedDivX = Math.max(0, Math.min(videoWidth - divWidth, idealDivX));
-  const clampedDivY = Math.max(0, Math.min(videoHeight - divHeight, idealDivY));
+  const clampedDivX = Math.max(0, Math.min(renderWidth - divWidth, idealDivX));
+  const clampedDivY = Math.max(
+    0,
+    Math.min(renderHeight - divHeight, idealDivY)
+  );
 
   logger.log("📦 Div positioning", {
     idealPosition: { x: idealDivX, y: idealDivY },
@@ -840,10 +846,14 @@ async function processClipForExportWithCanvas(
   data: ClipExportData
 ): Promise<{ success: boolean; outputPath: string }> {
   const { blob, metadata } = response;
-  const { exportSettings, clientDisplaySize } = data;
+  const { exportSettings, clientDisplaySize, targetResolution } = data;
 
   try {
-    if (!blob || !metadata) throw new Error("Missing blob or metadata");
+    if (!blob || !metadata || !targetResolution || !clientDisplaySize) {
+      throw new Error(
+        "Missing blob, metadata, target resolution, or client display size"
+      );
+    }
 
     logger.log("🎬 Starting canvas-based clip export", {
       clipId: data.id,
@@ -854,8 +864,12 @@ async function processClipForExportWithCanvas(
         crf: exportSettings.crf,
         fps: exportSettings.fps,
         format: exportSettings.format,
+        resolution: exportSettings.resolution,
+        bitrate: exportSettings.bitrate,
+        customBitrateKbps: exportSettings.customBitrateKbps,
       },
       clientDisplaySize,
+      targetResolution,
     });
 
     const tempInput = path.join(bufferDir, `temp_clip_${Date.now()}.webm`);
@@ -876,6 +890,29 @@ async function processClipForExportWithCanvas(
       targetFPS
     );
 
+    // Determine bitrate
+    let finalBitrateKbps: number;
+    const resolutionBitrates = EXPORT_BITRATE_MAP[exportSettings.resolution!];
+    const fpsBitrates = resolutionBitrates
+      ? resolutionBitrates[exportSettings.fps!]
+      : undefined;
+
+    if (
+      exportSettings.bitrate === "custom" &&
+      exportSettings.customBitrateKbps !== undefined
+    ) {
+      finalBitrateKbps = exportSettings.customBitrateKbps;
+    } else if (exportSettings.bitrate === "high") {
+      finalBitrateKbps = fpsBitrates?.high || 12000; // Default to 12Mbps
+    } else if (exportSettings.bitrate === "min") {
+      finalBitrateKbps = fpsBitrates?.min || 4000; // Default to 4Mbps
+    } else {
+      finalBitrateKbps = fpsBitrates?.standard || 8000; // Default to 8Mbps
+    }
+    finalBitrateKbps *= 1000; // Convert Mbps to Kbps
+
+    logger.log("📊 Final bitrate for export:", finalBitrateKbps, "bps");
+
     // If we have text overlays, create overlay frames
     if (data.textOverlays && data.textOverlays.length > 0) {
       const overlayFramesDir = path.join(
@@ -890,7 +927,8 @@ async function processClipForExportWithCanvas(
         duration,
         overlayFramesDir,
         targetFPS,
-        clientDisplaySize
+        clientDisplaySize,
+        targetResolution
       );
 
       // With overlay filter
@@ -906,13 +944,12 @@ async function processClipForExportWithCanvas(
         "-i",
         path.join(overlayFramesDir, "overlay_%04d.png"),
         "-filter_complex",
-        `[0:v][1:v]overlay=0:0:enable='between(t,0,${duration})'[v]`,
+        `[0:v]scale=${targetResolution.width}:${targetResolution.height}[scaled_video];` +
+          `[scaled_video][1:v]overlay=0:0:enable='between(t,0,${duration})'[v]`,
         "-map",
         "[v]",
         "-map",
         "0:a?",
-        "-s",
-        `${metadata.dimensions.width}x${metadata.dimensions.height}`,
         "-c:v",
         "libx264",
         "-c:a",
@@ -921,6 +958,8 @@ async function processClipForExportWithCanvas(
         exportSettings.preset,
         "-crf",
         exportSettings.crf.toString(),
+        "-b:v",
+        `${finalBitrateKbps}k`,
         "-r",
         targetFPS.toString(),
         "-f",
@@ -971,6 +1010,8 @@ async function processClipForExportWithCanvas(
         tempInput,
         "-t",
         duration.toString(),
+        "-s",
+        `${targetResolution.width}x${targetResolution.height}`,
         "-c:v",
         "libx264",
         "-c:a",
@@ -979,6 +1020,8 @@ async function processClipForExportWithCanvas(
         exportSettings.preset,
         "-crf",
         exportSettings.crf.toString(),
+        "-b:v",
+        `${finalBitrateKbps}k`,
         "-r",
         targetFPS.toString(),
         "-f",
@@ -989,7 +1032,14 @@ async function processClipForExportWithCanvas(
 
       return new Promise((resolve, reject) => {
         const ff = spawn(ffmpegPath, args);
+        ff.stderr.on("data", (chunk) => {
+          const chunkStr = chunk.toString();
+          logger.log("📊 FFmpeg stderr:", chunkStr.trim());
+        });
+
         ff.on("close", (code) => {
+          recordingProcess = null;
+
           try {
             fs.unlinkSync(tempInput);
           } catch (e) {}
@@ -1063,13 +1113,15 @@ async function generateOverlayFrames(
   duration: number,
   outputDir: string,
   fps: number,
-  clientDisplaySize: { width: number; height: number }
+  clientDisplaySize: { width: number; height: number },
+  targetResolution?: { width: number; height: number }
 ): Promise<void> {
   const totalFrames = Math.ceil(duration * fps);
-  const canvas: Canvas = createCanvas(
-    videoDimensions.width,
-    videoDimensions.height
-  );
+
+  const renderDimensions = targetResolution || videoDimensions;
+  const { width: renderWidth, height: renderHeight } = renderDimensions;
+
+  const canvas: Canvas = createCanvas(renderWidth, renderHeight);
   const ctx: CanvasRenderingContext2D = canvas.getContext("2d");
 
   const scaleFactor = calculateScaleFactor(videoDimensions, clientDisplaySize);
@@ -1135,7 +1187,14 @@ async function generateOverlayFrames(
     if (!overlayStates.has(stateKey)) {
       // Render overlays
       visibleOverlays.forEach((overlay) => {
-        renderTextOverlay(canvas, ctx, overlay, videoDimensions, scaleFactor);
+        renderTextOverlay(
+          canvas,
+          ctx,
+          overlay,
+          videoDimensions,
+          scaleFactor,
+          targetResolution
+        );
       });
 
       const frameBuffer = canvas.toBuffer("image/png");
@@ -1464,6 +1523,12 @@ async function convertVideoAspectRatio(
         const scaleExpr = `scale='if(gt(a,${targetRatio}),${padW},-1)':'if(gt(a,${targetRatio}),-1,${padH})'`;
         const padExpr = `pad=${padW}:${padH}:(ow-iw)/2:(oh-ih)/2:color=white`;
         filterArgs = ["-vf", `${scaleExpr},${padExpr}`];
+
+        logger.log("📐 Letterbox scale and pad expressions:", {
+          scaleExpr,
+          padExpr,
+        });
+
         break;
       }
       case "crop": {

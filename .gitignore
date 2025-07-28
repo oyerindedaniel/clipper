@@ -47,3 +47,6 @@ next-env.d.ts
 *.asar
 *.bin
 *.dll
+
+
+implementation_guide.md
