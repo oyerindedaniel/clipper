@@ -1,10 +1,13 @@
 import recordingService from "@/services/recording-service";
-import logger from "./logger";
+import { WAIT_UNTIL_BUFFER_TIMEOUT_MS } from "@/constants/app";
 
 /**
  * Waits until the recording buffer has reached or exceeded the given target duration.
  */
-async function waitUntilBufferCatchesUp(target: number, timeout = 20000) {
+async function waitUntilBufferCatchesUp(
+  target: number,
+  timeout = WAIT_UNTIL_BUFFER_TIMEOUT_MS
+) {
   const start = Date.now();
   return new Promise<void>((resolve, reject) => {
     const check = () => {
@@ -94,8 +97,50 @@ function getOverlayNormalizedCoords(
   return { x, y };
 }
 
+/**
+ * Calculates the target video dimensions (width and height) based on a given resolution string (e.g., "1080p", "4k")
+ * and the aspect ratio of the original video. It prioritizes the height from the resolution string
+ * and derives the width to maintain the aspect ratio.
+ *
+ * @param resolution - The target resolution string (e.g., "720p", "1080p", "1440p", "4k").
+ * @param aspectRatio - The aspect ratio of the original video (width / height).
+ * @returns An object containing the calculated width and height.
+ */
+function getTargetVideoDimensions(
+  resolution: "720p" | "1080p" | "1440p" | "4k",
+  aspectRatio: number
+): { width: number; height: number } {
+  let targetHeight: number;
+
+  switch (resolution) {
+    case "720p":
+      targetHeight = 720;
+      break;
+    case "1080p":
+      targetHeight = 1080;
+      break;
+    case "1440p":
+      targetHeight = 1440;
+      break;
+    case "4k":
+      targetHeight = 2160; // 4K resolution is 3840x2160 (height)
+      break;
+    default:
+      targetHeight = 1080; // Default to 1080p if unrecognized
+  }
+
+  const targetWidth = Math.round(targetHeight * aspectRatio);
+
+  // Ensure width is an even number, which is often required by video encoders
+  return {
+    width: targetWidth % 2 === 0 ? targetWidth : targetWidth + 1,
+    height: targetHeight,
+  };
+}
+
 export {
   waitUntilBufferCatchesUp,
   getVideoBoundingBox,
   getOverlayNormalizedCoords,
+  getTargetVideoDimensions,
 };

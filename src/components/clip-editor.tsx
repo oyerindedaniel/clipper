@@ -38,7 +38,7 @@ import { DEFAULT_ASPECT_RATIO, DEFAULT_CROP_MODE } from "@/constants/app";
 import { Timeline } from "@/components/timeline";
 import { TimelineSkeleton } from "@/components/timeline-skeleton";
 import { ExportNamingDialog } from "@/components/export-naming-dialog";
-import { calculateMaxWidth } from "@/hooks/use-text-overlays";
+import { getTargetVideoDimensions } from "@/utils/app";
 
 interface ClipEditorProps {
   clip: ClipMarker | null;
@@ -275,11 +275,23 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
       crf,
       fps,
       format,
-    }: Pick<ExportSettings, "preset" | "crf" | "fps" | "format">
+      resolution,
+      bitrate,
+      customBitrateKbps,
+    }: Pick<
+      ExportSettings,
+      | "preset"
+      | "crf"
+      | "fps"
+      | "format"
+      | "resolution"
+      | "bitrate"
+      | "customBitrateKbps"
+    >
   ) => {
     const video = videoRef.current;
 
-    if (!clip || !video) return;
+    if (!clip || !video || !clipMetaDataRef.current) return;
 
     setIsExporting(true);
 
@@ -291,7 +303,18 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
           return reject(new Error("No output path selected"));
         }
 
-        const { width, height } = getVideoBoundingBox(video);
+        const { width: clientWidth, height: clientHeight } =
+          getVideoBoundingBox(video);
+        const clientDisplaySize = { width: clientWidth, height: clientHeight };
+
+        // Uses the actual video's aspect ratio to calculate target dimensions
+        const videoAspectRatio =
+          clipMetaDataRef.current!.dimensions.width /
+          clipMetaDataRef.current!.dimensions.height;
+        const targetResolutionDimensions = getTargetVideoDimensions(
+          resolution!,
+          videoAspectRatio
+        );
 
         const exportData: ClipExportData = {
           id: clip.id,
@@ -306,10 +329,14 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
             crf,
             fps,
             format,
+            resolution,
+            bitrate,
+            customBitrateKbps,
             convertAspectRatio: selectedConvertAspectRatio.current || undefined,
             cropMode: selectedCropMode.current,
           },
-          clientDisplaySize: { width, height },
+          clientDisplaySize,
+          targetResolution: targetResolutionDimensions,
         };
 
         const result = await window.electronAPI.exportClip(exportData);
@@ -549,7 +576,6 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
                 { id: "clips", label: "Clips", icon: Scissors },
                 { id: "text", label: "Text", icon: Type },
                 { id: "audio", label: "Audio", icon: Music },
-                { id: "export", label: "Export", icon: Settings },
               ].map(({ id, label, icon: Icon }) => (
                 <Button
                   key={id}

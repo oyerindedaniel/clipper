@@ -13,13 +13,22 @@ import recordingService from "@/services/recording-service";
 import logger from "@/utils/logger";
 import { waitUntilBufferCatchesUp } from "@/utils/app";
 import { Button } from "@/components/ui/button";
-import { Tv, Eraser } from "lucide-react";
+import { Tv, Eraser, Timer } from "lucide-react";
+import {
+  DEFAULT_CLIP_PRE_MARK_MS,
+  DEFAULT_CLIP_POST_MARK_MS,
+  CLIP_BUFFER_MS,
+  WAIT_UNTIL_BUFFER_TIMEOUT_MS,
+} from "@/constants/app";
 import {
   Tooltip,
   TooltipContent,
   TooltipProvider,
   TooltipTrigger,
 } from "@/components/ui/tooltip";
+import { ClipDurationDialog } from "@/components/clip-duration-dialog";
+import { useLatestValue } from "@/hooks/use-latest-value";
+import { useDisclosure } from "@/hooks/use-disclosure";
 
 type TabKey = "stream" | "clips" | "editor";
 
@@ -33,6 +42,17 @@ export default function Home() {
   );
   const [currentStream, setCurrentStream] =
     useState<RecordingStartedInfo | null>(null);
+
+  const {
+    isOpen: isOpenClipDurationDialog,
+    open: openClipDurationDialog,
+    close: closeClipDurationDialog,
+  } = useDisclosure();
+  const [clipPostMarkDuration, setClipPostMarkDuration] = useState<number>(
+    DEFAULT_CLIP_POST_MARK_MS
+  );
+
+  const clipPostMarkDurationRef = useLatestValue(clipPostMarkDuration);
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.electronAPI) {
@@ -106,15 +126,19 @@ export default function Home() {
             }
 
             const relative = now - recordingStartTime;
-            const desiredEnd = relative + 10_000;
-            const endBuffer = 3000;
-            await waitUntilBufferCatchesUp(desiredEnd + endBuffer);
+            const desiredEnd = relative + clipPostMarkDurationRef.current;
+            const target = desiredEnd + CLIP_BUFFER_MS;
 
-            const clipStart = Math.max(0, relative - 10_000); // 10 seconds before
+            await waitUntilBufferCatchesUp(
+              target,
+              target + WAIT_UNTIL_BUFFER_TIMEOUT_MS
+            );
+
+            const clipStart = Math.max(0, relative - DEFAULT_CLIP_PRE_MARK_MS);
             const clipEnd = Math.min(
               desiredEnd,
               recordingService.getBufferDuration()
-            ); // 10 seconds after
+            );
 
             const marker = {
               id: `clip_${now}`,
@@ -138,7 +162,6 @@ export default function Home() {
         }
       );
 
-      // Existing listeners for UI updates
       window.electronAPI.onRecordingStarted(
         (event, data: RecordingStartedInfo) => {
           setIsRecording(true);
@@ -178,6 +201,19 @@ export default function Home() {
       }
     };
   }, []);
+
+  useEffect(() => {
+    const handleKeyDown = (event: KeyboardEvent) => {
+      if (event.ctrlKey && event.shiftKey && event.key === "D") {
+        event.preventDefault();
+        openClipDurationDialog();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+    };
+  }, [openClipDurationDialog]);
 
   const loadClipMarkers = async () => {
     try {
@@ -230,6 +266,11 @@ export default function Home() {
     [setActiveTab]
   );
 
+  const handleSaveClipDuration = (duration: number) => {
+    setClipPostMarkDuration(duration);
+    toast.success(`Clip post-mark duration set to ${duration / 1000} seconds.`);
+  };
+
   return (
     <div className="min-h-screen bg-surface-primary text-foreground-default font-sans text-sm">
       <header className="bg-surface-secondary border-b border-gray-700/50">
@@ -262,6 +303,23 @@ export default function Home() {
                   </TooltipTrigger>
                   <TooltipContent>
                     <p>Clear Memory (Resets recording and clips)</p>
+                  </TooltipContent>
+                </Tooltip>
+              </TooltipProvider>
+              <TooltipProvider>
+                <Tooltip>
+                  <TooltipTrigger asChild>
+                    <Button
+                      onClick={openClipDurationDialog}
+                      variant="ghost"
+                      size="icon"
+                      className="size-8"
+                    >
+                      <Timer size={16} />
+                    </Button>
+                  </TooltipTrigger>
+                  <TooltipContent>
+                    <p>Set Clip Duration (Ctrl+Shift+D)</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -369,6 +427,12 @@ export default function Home() {
           </div>
         </div>
       </div>
+      <ClipDurationDialog
+        isOpen={isOpenClipDurationDialog}
+        onOpenChange={closeClipDurationDialog}
+        onSave={handleSaveClipDuration}
+        currentDurationMs={clipPostMarkDuration}
+      />
     </div>
   );
 }

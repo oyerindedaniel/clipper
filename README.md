@@ -1,3 +1,7 @@
 # Personal Twitch Clipper
 
-This application is designed for personal use to clip and edit moments from Twitch streams. It allows users to capture, trim, add text overlays, and audio tracks to their clips, providing a simple solution for creating personalized content.
+This application is designed for personal use to clip.
+
+## Disclaimer
+
+This project is not affiliated with, endorsed by, or in any way officially connected with Twitch, Inc. or any of its subsidiaries or its affiliates.
