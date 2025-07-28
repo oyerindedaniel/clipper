@@ -191,3 +191,14 @@ export type FontWeight =
   | "normal";
 
 export type FontStyle = "normal" | "italic" | "oblique";
+
+export interface ClipOptions {
+  convertAspectRatio?: string;
+  cropMode?: "letterbox" | "crop" | "stretch";
+}
+
+export interface ClipResponse {
+  success: boolean;
+  blob?: Uint8Array;
+  error?: string;
+}

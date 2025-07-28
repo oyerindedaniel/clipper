@@ -2,13 +2,11 @@ import { IpcRendererEvent } from "electron";
 import {
   ClipExportData,
   ClipMarker,
+  ClipOptions,
+  ClipResponse,
   DesktopSource,
   ExportProgressInfo,
   RecordingStartedInfo,
-  StartRecordingResponse,
-  StopRecordingResponse,
-  MarkClipResponse,
-  ExportClipResponse,
 } from "@/types/app";
 
 export interface ElectronAPI {
@@ -18,7 +16,16 @@ export interface ElectronAPI {
     resetBuffer?: boolean
   ) => Promise<{ success: boolean }>;
   stopRecording: () => Promise<{ success: boolean }>;
+  setClipDuration: (
+    durationMs: number
+  ) => Promise<{ success: boolean; error?: string }>;
   getClipMarkers: () => Promise<ClipMarker[]>;
+  getClipBlob: (
+    startTimeMs: number,
+    endTimeMs: number,
+    options?: ClipOptions
+  ) => Promise<ClipResponse>;
+  getBufferDuration: () => Promise<number>;
   remuxClip: (
     chunks: ArrayBuffer[],
     clipStartMs: number,
@@ -34,31 +41,6 @@ export interface ElectronAPI {
   selectOutputFolder: () => Promise<string | null>;
   getDesktopSources: () => Promise<DesktopSource[]>;
   getStreamerName: () => Promise<string | null>;
-  onRequestStartRecording: (
-    callback: (
-      _: IpcRendererEvent,
-      data: { sourceId: string; requestId: string }
-    ) => void
-  ) => void;
-  onRequestStopRecording: (
-    callback: (_: IpcRendererEvent, data: { requestId: string }) => void
-  ) => void;
-  onRequestMarkClip: (
-    callback: (
-      _: IpcRendererEvent,
-      data: { requestId: string; streamStartTime: number }
-    ) => void
-  ) => void;
-  onRequestExportClip: (
-    callback: (
-      _: IpcRendererEvent,
-      data: { requestId: string; clipData: ClipExportData }
-    ) => void
-  ) => void;
-  sendStartRecordingResponse: (response: StartRecordingResponse) => void;
-  sendStopRecordingResponse: (response: StopRecordingResponse) => void;
-  sendMarkClipResponse: (response: MarkClipResponse) => void;
-  sendExportClipResponse: (response: ExportClipResponse) => void;
   onRecordingStarted: (
     callback: (_: IpcRendererEvent, info: RecordingStartedInfo) => void
   ) => void;
@@ -78,11 +60,5 @@ export interface ElectronAPI {
 declare global {
   interface Window {
     electronAPI: ElectronAPI;
-    screenCapture: {
-      getUserMedia: (
-        constraints: MediaStreamConstraints
-      ) => Promise<MediaStream>;
-      getSources: () => Promise<DesktopSource[]>;
-    };
   }
 }

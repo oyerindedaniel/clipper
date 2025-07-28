@@ -14,7 +14,6 @@ import {
   ClipMarker,
   AudioTrack,
   ExportSettings,
-  ExportProgressInfo,
   CropMode,
   ClipExportData,
   ClipMetadata,
@@ -143,10 +142,13 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
         return objectUrl;
       } else {
         logger.error("Failed to get valid clip blob:", { blob });
+        toast.error("Failed to load clip: No valid clip data found");
         return null;
       }
     } catch (err) {
+      const errorMsg = normalizeError(err).message;
       logger.error("Error loading clip blob:", err);
+      toast.error(`Failed to load clip: ${errorMsg}`);
       return null;
     }
   }, [clip?.id]);
@@ -193,6 +195,7 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
         readyState: videoElement.readyState,
         currentSrc: videoElement.currentSrc,
       });
+      toast.error("Error loading video clip");
     };
 
     let currentObjectUrl: string | null = null;
@@ -381,93 +384,6 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
 
     logger.log("Trimmed video from:", startTime, "to:", endTime);
   };
-
-  useEffect(() => {
-    window.electronAPI.onRequestExportClip(
-      async (event, { requestId, clipData }) => {
-        try {
-          logger.log("Received export clip request:", {
-            requestId,
-            clipData,
-            cachedClipMetadata: clipMetaDataRef.current,
-          });
-
-          const blob = await recordingService.getClipBlob(
-            clipData.startTime,
-            clipData.endTime,
-            {
-              convertAspectRatio:
-                clipMetaDataRef.current?.aspectRatio ?? DEFAULT_ASPECT_RATIO,
-              cropMode: clipMetaDataRef.current?.cropMode ?? DEFAULT_CROP_MODE,
-            }
-          );
-
-          if (!blob || blob.size === 0) {
-            window.electronAPI.sendExportClipResponse({
-              requestId,
-              success: false,
-              error: "No clip data found for the specified time range",
-            });
-            return;
-          }
-
-          const arrayBuffer = await blob.arrayBuffer();
-
-          window.electronAPI.sendExportClipResponse({
-            requestId,
-            success: true,
-            blob: arrayBuffer,
-            metadata: clipMetaDataRef.current,
-          });
-        } catch (error) {
-          logger.error("Failed to export clip:", error);
-          window.electronAPI.sendExportClipResponse({
-            requestId,
-            success: false,
-            error: error instanceof Error ? error.message : "Unknown error",
-          });
-        }
-      }
-    );
-
-    window.electronAPI.onExportProgress(
-      (_: IpcRendererEvent, progressInfo: ExportProgressInfo) => {
-        if (progressInfo.clipId === clip?.id) {
-          // Parse FFmpeg progress (time format: 00:00:00.00)
-          const timeMatch = progressInfo.progress.match(
-            /(\d+):(\d+):(\d+)\.(\d+)/
-          );
-          if (timeMatch) {
-            const [, hours, minutes, seconds, centiseconds] = timeMatch;
-            const progressTime =
-              (parseInt(hours) * 3600 +
-                parseInt(minutes) * 60 +
-                parseInt(seconds)) *
-                1000 +
-              parseInt(centiseconds) * 10;
-            const totalTime = duration;
-            const progressPercentage = Math.min(
-              100,
-              (progressTime / totalTime) * 100
-            );
-            toast.loading(
-              `Exporting clip... ${progressPercentage.toFixed(2)}%`,
-              {
-                id: clip.id,
-              }
-            );
-          }
-        }
-      }
-    );
-
-    return () => {
-      if (typeof window !== "undefined" && window.electronAPI) {
-        window.electronAPI.removeAllListeners("request-export-clip");
-        window.electronAPI.removeAllListeners("export-progress");
-      }
-    };
-  }, [clip?.id]);
 
   return (
     <div className="flex flex-col h-screen bg-surface-primary text-foreground-default text-sm">

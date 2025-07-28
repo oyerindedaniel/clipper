@@ -2,26 +2,6 @@ import recordingService from "@/services/recording-service";
 import { WAIT_UNTIL_BUFFER_TIMEOUT_MS } from "@/constants/app";
 
 /**
- * Waits until the recording buffer has reached or exceeded the given target duration.
- */
-async function waitUntilBufferCatchesUp(
-  target: number,
-  timeout = WAIT_UNTIL_BUFFER_TIMEOUT_MS
-) {
-  const start = Date.now();
-  return new Promise<void>((resolve, reject) => {
-    const check = () => {
-      const buffer = recordingService.getBufferDuration();
-      if (buffer >= target) return resolve();
-      if (Date.now() - start > timeout)
-        return reject(new Error("Buffer timeout"));
-      setTimeout(check, 50);
-    };
-    check();
-  });
-}
-
-/**
  * Calculate the visible bounding box of a video element inside its container.
  *
  * @param video - The HTMLVideoElement
@@ -139,7 +119,6 @@ function getTargetVideoDimensions(
 }
 
 export {
-  waitUntilBufferCatchesUp,
   getVideoBoundingBox,
   getOverlayNormalizedCoords,
   getTargetVideoDimensions,

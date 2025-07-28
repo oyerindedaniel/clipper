@@ -5,7 +5,6 @@ import {
   globalShortcut,
   dialog,
   IpcMainInvokeEvent,
-  IpcMainEvent,
 } from "electron";
 import ffmpegStatic from "ffmpeg-static";
 import ffprobeStatic from "ffprobe-static";
@@ -19,19 +18,25 @@ import {
   ClipExportData,
   ClipMarker,
   StreamSession,
-  StartRecordingResponse,
-  StopRecordingResponse,
-  MarkClipResponse,
-  ExportClipResponse,
   TextOverlay,
   FontStyle,
   FontWeight,
+  ExportClipResponse,
+  ClipOptions,
+  ClipResponse,
 } from "../src/types/app";
 import logger from "../src/utils/logger";
 import DesktopCaptureManager from "./services/desktop-capture";
 import fontManager from "./services/font-manager";
 import { normalizeError } from "../src/utils/error-utils";
-import { EXPORT_BITRATE_MAP } from "../src/constants/app";
+import {
+  DEFAULT_CLIP_POST_MARK_MS,
+  DEFAULT_CLIP_PRE_MARK_MS,
+  EXPORT_BITRATE_MAP,
+} from "../src/constants/app";
+import FFmpegRecordingService from "./services/ffmpeg-recording-service";
+
+const recordingService = FFmpegRecordingService.getInstance();
 
 let mainWindow: BrowserWindow | null = null;
 let twitchWindow: BrowserWindow | null = null;
@@ -40,12 +45,7 @@ let recordingProcess: ChildProcessWithoutNullStreams | null = null;
 let clipMarkers: ClipMarker[] = [];
 let currentStream: StreamSession | null = null;
 
-interface VideoDimensions {
-  width: number;
-  height: number;
-}
-
-const videoDimensionsCache = new Map<string, VideoDimensions>();
+let postMarkDurationMs = DEFAULT_CLIP_POST_MARK_MS;
 
 const bufferDir = path.join(os.tmpdir(), "twitch-recorder-buffer");
 const captureManager = DesktopCaptureManager.getInstance();
@@ -144,47 +144,25 @@ async function startRecording(sourceId?: string): Promise<void> {
 
     if (!source) throw new Error("No suitable capture source found");
 
-    // Request renderer to start recording and wait for response
-    return new Promise((resolve, reject) => {
-      const requestId = Date.now().toString();
+    const result = await recordingService.startRecording(source.name);
 
-      // Set up response listener
-      const responseHandler = (
-        event: IpcMainEvent,
-        response: StartRecordingResponse
-      ) => {
-        if (response.requestId === requestId) {
-          ipcMain.removeListener("start-recording-response", responseHandler);
+    if (!result.success) {
+      throw new Error(result.error || "Failed to start recording");
+    }
 
-          if (response.success) {
-            isRecording = true;
-            currentStream = {
-              startTime: Date.now(),
-              sourceId: source.id,
-              bufferFile: path.join(bufferDir, `buffer_${Date.now()}.webm`),
-            };
+    isRecording = true;
+    currentStream = {
+      startTime: Date.now(),
+      sourceId: source.id,
+      bufferFile: path.join(bufferDir, `buffer_${Date.now()}.mkv`),
+    };
 
-            mainWindow?.webContents.send("recording-started", {
-              sourceId: source.id,
-              startTime: currentStream.startTime,
-            });
-
-            cleanOldBuffers();
-            resolve();
-          } else {
-            reject(new Error(response.error || "Recording failed"));
-          }
-        }
-      };
-
-      ipcMain.on("start-recording-response", responseHandler);
-
-      // Send request to renderer
-      mainWindow?.webContents.send("request-start-recording", {
-        sourceId: source.id,
-        requestId,
-      });
+    mainWindow?.webContents.send("recording-started", {
+      sourceId: source.id,
+      startTime: currentStream.startTime,
     });
+
+    cleanOldBuffers();
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     logger.error("Recording failed:", msg);
@@ -200,71 +178,117 @@ async function startRecording(sourceId?: string): Promise<void> {
 async function stopRecording(): Promise<void> {
   if (!isRecording) return;
 
-  return new Promise<void>((resolve) => {
-    const requestId = Date.now().toString();
+  try {
+    const result = await recordingService.stopRecording();
+    if (!result.success) {
+      throw new Error("Failed to stop recording");
+    }
 
-    // Set up response listener
-    const responseHandler = (
-      event: IpcMainEvent,
-      response: StopRecordingResponse
-    ) => {
-      if (response.requestId === requestId) {
-        ipcMain.removeListener("stop-recording-response", responseHandler);
+    isRecording = false;
+    currentStream = null;
+    recordingProcess = null;
 
-        isRecording = false;
-        currentStream = null;
-        if (recordingProcess) {
-          recordingProcess.kill();
-          recordingProcess = null;
-        }
-
-        mainWindow?.webContents.send("recording-stopped");
-        resolve();
-      }
-    };
-
-    ipcMain.on("stop-recording-response", responseHandler);
-
-    // Send request to renderer
-    mainWindow?.webContents.send("request-stop-recording", { requestId });
-  });
+    mainWindow?.webContents.send("recording-stopped");
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    logger.error("Stop recording failed:", msg);
+    mainWindow?.webContents.send("recording-error", msg);
+    throw err;
+  }
 }
 
 /**
  * Mark a clip by requesting renderer to handle it.
  */
-function markClip(): void {
+async function markClip(): Promise<void> {
   if (!isRecording || !currentStream) return;
 
-  const requestId = Date.now().toString();
+  try {
+    const marker = await recordingService.createClipMarker(
+      DEFAULT_CLIP_PRE_MARK_MS,
+      postMarkDurationMs
+    );
+    if (!marker) return;
 
-  // Set up response listener
-  const responseHandler = (event: IpcMainEvent, response: MarkClipResponse) => {
-    if (response.requestId === requestId) {
-      ipcMain.removeListener("mark-clip-response", responseHandler);
+    const clipMarker: ClipMarker = {
+      ...marker,
+      streamStart: currentStream.startTime,
+      bufferFile: currentStream.bufferFile,
+    };
 
-      if (response.success && response.marker) {
-        const marker: ClipMarker = {
-          ...response.marker,
-          streamStart: currentStream!.startTime,
-          bufferFile: currentStream!.bufferFile,
-        };
+    logger.log({ clipMarker });
 
-        logger.log({ marker });
+    clipMarkers.push(clipMarker);
+    mainWindow?.webContents.send("clip-marked", clipMarker);
+  } catch (error) {
+    logger.error("Failed to mark clip:", error);
+  }
+}
 
-        clipMarkers.push(marker);
-        mainWindow?.webContents.send("clip-marked", marker);
+async function clipBlob(
+  startTimeMs: number,
+  endTimeMs: number,
+  options: ClipOptions = {}
+): Promise<ClipResponse> {
+  try {
+    const tempOutputPath = path.join(bufferDir, `temp_clip_${Date.now()}.webm`);
+    const result = await recordingService.extractClip(
+      startTimeMs,
+      endTimeMs,
+      tempOutputPath
+    );
+
+    if (!result.success) {
+      return {
+        success: false,
+        error: result.error || "Failed to extract clip",
+      };
+    }
+
+    let clipBuffer: Buffer;
+
+    try {
+      clipBuffer = fs.readFileSync(tempOutputPath);
+    } catch (readError) {
+      return { success: false, error: "Failed to read extracted clip file" };
+    }
+
+    if (
+      options.convertAspectRatio &&
+      options.convertAspectRatio !== "original"
+    ) {
+      try {
+        const arrayBuffer = clipBuffer.buffer as ArrayBuffer;
+        const slice = arrayBuffer.slice(
+          clipBuffer.byteOffset,
+          clipBuffer.byteOffset + clipBuffer.byteLength
+        );
+
+        const converted = await convertVideoAspectRatio(
+          slice,
+          options.convertAspectRatio,
+          options.cropMode || "letterbox"
+        );
+
+        clipBuffer = Buffer.from(converted);
+      } catch {
+        // Keep original buffer if conversion fails
       }
     }
-  };
 
-  ipcMain.on("mark-clip-response", responseHandler);
+    const clipBlob = new Uint8Array(clipBuffer);
 
-  // Send request to renderer
-  mainWindow?.webContents.send("request-mark-clip", {
-    requestId,
-    streamStartTime: currentStream.startTime,
-  });
+    try {
+      fs.unlinkSync(tempOutputPath);
+    } catch {}
+
+    return { success: true, blob: clipBlob };
+  } catch (error) {
+    return {
+      success: false,
+      error: error instanceof Error ? error.message : "Unknown error",
+    };
+  }
 }
 
 /**
@@ -273,36 +297,25 @@ function markClip(): void {
 async function exportClip(
   data: ClipExportData
 ): Promise<{ success: boolean; outputPath: string }> {
-  return new Promise((resolve, reject) => {
-    const requestId = Date.now().toString();
+  try {
+    const output = path.join(data.outputPath, `${data.outputName}.mp4`);
+    const result = await recordingService.extractClip(
+      data.startTime,
+      data.endTime,
+      output
+    );
 
-    // Set up response listener
-    const responseHandler = (
-      event: IpcMainEvent,
-      response: ExportClipResponse
-    ) => {
-      if (response.requestId === requestId) {
-        ipcMain.removeListener("export-clip-response", responseHandler);
+    if (!result.success) {
+      throw new Error(result.error || "Failed to export clip");
+    }
 
-        if (response.success && response.blob && response.metadata) {
-          // Handle the blob data from renderer and process with FFmpeg
-          processClipForExportWithCanvas(response, data)
-            .then(resolve)
-            .catch(reject);
-        } else {
-          reject(new Error(response.error || "Export failed"));
-        }
-      }
-    };
-
-    ipcMain.on("export-clip-response", responseHandler);
-
-    // Send request to renderer
-    mainWindow?.webContents.send("request-export-clip", {
-      requestId,
-      clipData: data,
-    });
-  });
+    logger.log("✅ Clip exported successfully", { outputPath: output });
+    return { success: true, outputPath: output };
+  } catch (err) {
+    const msg = err instanceof Error ? err.message : "Unknown error";
+    logger.error("Export clip failed:", msg);
+    throw err;
+  }
 }
 
 /**
@@ -1639,20 +1652,79 @@ function setupIpc(): void {
   ipcMain.handle(
     "start-recording",
     async (_: IpcMainInvokeEvent, sourceId?: string) => {
-      await startRecording(sourceId);
-      return { success: true };
+      try {
+        await startRecording(sourceId);
+        return { success: true };
+      } catch (err) {
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : "Unknown error",
+        };
+      }
+    }
+  );
+
+  ipcMain.handle(
+    "get-clip-blob",
+    async (
+      _: IpcMainInvokeEvent,
+      startTimeMs: number,
+      endTimeMs: number,
+      options: ClipOptions = {}
+    ) => {
+      await clipBlob(startTimeMs, endTimeMs, options);
+    }
+  );
+
+  ipcMain.handle("get-buffer-duration", (): number => {
+    const status = recordingService.getRecordingStatus();
+    return status.duration;
+  });
+
+  ipcMain.handle(
+    "set-clip-duration",
+    async (_: IpcMainInvokeEvent, durationMs: number) => {
+      try {
+        if (durationMs <= 0) {
+          throw new Error("Duration must be positive");
+        }
+        postMarkDurationMs = durationMs;
+        logger.log("Set post-mark clip duration:", { durationMs });
+        return { success: true };
+      } catch (err) {
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        logger.error("Failed to set clip duration:", msg);
+        return { success: false, error: msg };
+      }
     }
   );
 
   ipcMain.handle("stop-recording", async () => {
-    await stopRecording();
-    return { success: true };
+    try {
+      await stopRecording();
+      return { success: true };
+    } catch (err) {
+      return {
+        success: false,
+        error: err instanceof Error ? err.message : "Unknown error",
+      };
+    }
   });
 
   ipcMain.handle("get-clip-markers", () => clipMarkers);
 
-  ipcMain.handle("export-clip", (_: IpcMainInvokeEvent, data: ClipExportData) =>
-    exportClip(data)
+  ipcMain.handle(
+    "export-clip",
+    async (_: IpcMainInvokeEvent, data: ClipExportData) => {
+      try {
+        return await exportClip(data);
+      } catch (err) {
+        return {
+          success: false,
+          error: err instanceof Error ? err.message : "Unknown error",
+        };
+      }
+    }
   );
 
   ipcMain.handle("select-output-folder", async () => {

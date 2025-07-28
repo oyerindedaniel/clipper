@@ -1,448 +1,129 @@
-import { RecordedChunk } from "@/types/app";
+import { ClipOptions } from "@/types/app";
 import logger from "@/utils/logger";
 
-/**
- * Handles screen and audio recording, buffering, and clip extraction.
- */
+interface ClipCacheEntry {
+  blob: Blob;
+  cachedAt: number;
+}
+
+/** Provides access to FFmpeg-recorded video clips with in-memory caching. */
+
 class RecordingService {
   private static instance: RecordingService | null = null;
+  private readonly clipCache: Map<string, ClipCacheEntry> = new Map();
+  private readonly cacheTTL = 10 * 60 * 1000;
 
-  private mediaRecorder: MediaRecorder | null = null;
-  private recordedChunks: RecordedChunk[] = [];
-  private isRecording = false;
-  private readonly bufferDuration = 15 * 60 * 1000; // 15 minutes
-  private stream: MediaStream | null = null;
-  private startTime: number | null = null;
-  private bufferInterval: NodeJS.Timeout | null = null;
-  private clipCache: Map<string, { blob: Blob; cachedAt: number }> = new Map();
-  private readonly clipCacheExpiry = 10 * 60 * 1000;
-
-  /**
-   * Starts recording a screen and system audio stream.
-   * @param sourceId The desktop capture source ID.
-   */
-  public async startRecording(
-    sourceId: string,
-    resetBuffer: boolean = true
-  ): Promise<{ success: boolean }> {
-    try {
-      if (resetBuffer) {
-        this.reset();
-      }
-
-      if (this.isRecording) {
-        logger.warn("⚠️ Recording already in progress");
-        return { success: false };
-      }
-
-      logger.log("🚀 Starting recording with sourceId:", sourceId);
-      logger.log("⏰ Recording start time:", new Date().toISOString());
-
-      // Get combined audio/video stream in one call
-      logger.log("📡 Requesting combined audio/video stream...");
-      const combinedStream = await navigator.mediaDevices.getUserMedia({
-        audio: {
-          mandatory: {
-            chromeMediaSource: "desktop",
-            chromeMediaSourceId: sourceId,
-          },
-        } as MediaTrackConstraints,
-        video: {
-          mandatory: {
-            chromeMediaSource: "desktop",
-            chromeMediaSourceId: sourceId,
-            minWidth: 1280,
-            maxWidth: 1920,
-            // maxWidth: 1280,
-            minHeight: 720,
-            maxHeight: 1080,
-            minFrameRate: 30,
-            maxFrameRate: 30,
-          },
-        } as MediaTrackConstraints,
-      });
-
-      logger.log("✅ Combined stream obtained successfully");
-      logger.log("🎥 Video tracks:", combinedStream.getVideoTracks().length);
-      logger.log("🔊 Audio tracks:", combinedStream.getAudioTracks().length);
-      logger.log("📊 Total tracks:", combinedStream.getTracks().length);
-
-      // Log track details
-      combinedStream.getVideoTracks().forEach((track, index) => {
-        logger.log(`🎥 Video track ${index}:`, {
-          id: track.id,
-          label: track.label,
-          enabled: track.enabled,
-          readyState: track.readyState,
-          settings: track.getSettings(),
-        });
-      });
-
-      combinedStream.getAudioTracks().forEach((track, index) => {
-        logger.log(`🔊 Audio track ${index}:`, {
-          id: track.id,
-          label: track.label,
-          enabled: track.enabled,
-          readyState: track.readyState,
-          settings: track.getSettings(),
-        });
-      });
-
-      this.stream = combinedStream;
-      this.startTime = Date.now();
-      logger.log("⏱️ Recording startTime set to:", this.startTime);
-
-      // Check MediaRecorder support
-      const mimeType = "video/webm; codecs=vp9,opus";
-      const isSupported = MediaRecorder.isTypeSupported(mimeType);
-      logger.log(
-        "🎬 MediaRecorder mimeType support:",
-        mimeType,
-        "->",
-        isSupported
-      );
-
-      if (!isSupported) {
-        logger.warn("⚠️ Preferred mimeType not supported, trying fallback...");
-        const fallbackMimeType = "video/webm";
-        logger.log(
-          "🎬 Fallback mimeType:",
-          fallbackMimeType,
-          "->",
-          MediaRecorder.isTypeSupported(fallbackMimeType)
-        );
-      }
-
-      this.mediaRecorder = new MediaRecorder(combinedStream, {
-        mimeType: isSupported ? mimeType : "video/webm",
-        bitsPerSecond: 5100000, // 5.1 Mbps
-      });
-
-      logger.log(
-        "📹 MediaRecorder created with state:",
-        this.mediaRecorder.state
-      );
-
-      this.mediaRecorder.ondataavailable = (event: BlobEvent): void => {
-        if (event.data.size > 0 && this.startTime !== null) {
-          const timestamp = Date.now() - this.startTime;
-          // this.recordedChunks.push({
-          //   data: event.data,
-          //   timestamp: timestamp,
-          // });
-          logger.log("📦 Chunk received:", {
-            size: event.data.size,
-            timestamp: timestamp,
-            totalChunks: this.recordedChunks.length,
-            bufferDuration: this.getBufferDuration(),
-          });
-        } else {
-          logger.warn("⚠️ Empty chunk received or startTime is null");
-        }
-      };
-
-      this.mediaRecorder.onstop = (): void => {
-        logger.log("🛑 MediaRecorder stopped");
-        logger.log("📊 Final stats:", {
-          totalChunks: this.recordedChunks.length,
-          bufferDuration: this.getBufferDuration(),
-          recordingDuration: this.startTime ? Date.now() - this.startTime : 0,
-        });
-        this.isRecording = false;
-        this.cleanupStream();
-
-        logger.log("✅ Recording stopped successfully");
-      };
-
-      this.mediaRecorder.onerror = (event: ErrorEvent): void => {
-        logger.error("❌ MediaRecorder error:", event.error);
-        logger.error("📊 Error context:", {
-          state: this.mediaRecorder?.state,
-          isRecording: this.isRecording,
-          chunksCount: this.recordedChunks.length,
-        });
-        this.stopRecording();
-      };
-
-      this.mediaRecorder.onstart = (): void => {
-        logger.log("▶️ MediaRecorder started successfully");
-        logger.log("📊 Initial state:", {
-          state: this.mediaRecorder?.state,
-          streamActive: this.stream?.active,
-          trackCount: this.stream?.getTracks().length,
-        });
-      };
-
-      this.mediaRecorder.onpause = (): void => {
-        logger.log("⏸️ MediaRecorder paused");
-      };
-
-      this.mediaRecorder.onresume = (): void => {
-        logger.log("▶️ MediaRecorder resumed");
-      };
-
-      logger.log("🎬 Starting MediaRecorder with 1000ms timeslice...");
-      this.mediaRecorder.start(1000);
-      this.isRecording = true;
-
-      logger.log("🧹 Starting buffer management...");
-      // this.startBufferManagement();
-
-      logger.log("✅ Recording started successfully!");
-      return { success: true };
-    } catch (error) {
-      logger.error("❌ Failed to start recording:", error);
-      logger.error("🔍 Error details:", {
-        name: error instanceof Error ? error.name : "Unknown",
-        message: error instanceof Error ? error.message : "Unknown error",
-        stack: error instanceof Error ? error.stack : undefined,
-      });
-
-      // Cleanup on error
-      if (this.stream) {
-        logger.log("🧹 Cleaning up stream due to error...");
-        this.cleanupStream();
-      }
-
-      throw error;
-    }
-  }
-
-  /**
-   * Provides access to the singleton instance of the RecordingService.
-   * @returns The RecordingService instance.
-   */
   public static getInstance(): RecordingService {
     if (!RecordingService.instance) {
       RecordingService.instance = new RecordingService();
     }
-
     return RecordingService.instance;
   }
 
-  /**
-   * Stops the ongoing recording session.
-   */
-  public stopRecording(): void {
-    logger.log("🛑 Stopping recording...");
-    logger.log("📊 Pre-stop stats:", {
-      isRecording: this.isRecording,
-      chunksCount: this.recordedChunks.length,
-      bufferDuration: this.getBufferDuration(),
-      mediaRecorderState: this.mediaRecorder?.state,
-    });
-
-    if (this.mediaRecorder && this.isRecording) {
-      this.mediaRecorder.stop();
-    }
-
-    if (this.bufferInterval) {
-      clearInterval(this.bufferInterval);
-      this.bufferInterval = null;
-      logger.log("🧹 Buffer management stopped");
-    }
-  }
-
-  /**
-   * Starts the internal buffer cleanup process.
-   */
-  private startBufferManagement(): void {
-    logger.log("🧹 Buffer management started (cleanup every 30s)");
-    this.bufferInterval = setInterval(() => {
-      const beforeCount = this.recordedChunks.length;
-      this.cleanOldChunks();
-      const afterCount = this.recordedChunks.length;
-      const cleaned = beforeCount - afterCount;
-
-      if (cleaned > 0) {
-        logger.log("🧹 Buffer cleanup:", {
-          chunksRemoved: cleaned,
-          remainingChunks: afterCount,
-          bufferDuration: this.getBufferDuration(),
-        });
-      }
-    }, 30_000);
-  }
-
-  /**
-   * Cleans out old chunks beyond the configured buffer duration.
-   */
-  private cleanOldChunks(): void {
-    if (this.startTime === null) return;
-
-    const cutoffTime = Date.now() - this.startTime - this.bufferDuration;
-    const originalLength = this.recordedChunks.length;
-
-    this.recordedChunks = this.recordedChunks.filter(
-      (chunk) => chunk.timestamp > cutoffTime
-    );
-
-    const removedCount = originalLength - this.recordedChunks.length;
-    if (removedCount > 0) {
-      logger.log("🗑️ Cleaned old chunks:", {
-        removed: removedCount,
-        remaining: this.recordedChunks.length,
-        cutoffTime: cutoffTime,
-      });
-    }
-  }
-
-  /**
-   * Stops and clears the current media stream.
-   */
-  private cleanupStream(): void {
-    if (this.stream) {
-      this.stream.getTracks().forEach((track) => track.stop());
-      this.stream = null;
-    }
-
-    this.mediaRecorder = null;
-
-    if (this.bufferInterval) {
-      clearInterval(this.bufferInterval);
-      this.bufferInterval = null;
-    }
-
-    // DO NOT clear: recordedChunks, startTime, isRecording
-    // These are needed for clip extraction after recording stops
-  }
-
-  /**
-   * Completely resets the recording service state.
-   * Call this when you want to start fresh (e.g., new recording session).
-   */
-  public reset(): void {
-    this.cleanupStream();
-
-    this.clipCache.clear();
-    this.recordedChunks = [];
-    this.isRecording = false;
-    this.startTime = null;
-
-    logger.log("🔄 RecordingService reset completely");
-  }
-
-  /**
-   * Creates a trimmed WebM clip from recorded chunks with caching and optional aspect ratio
-   */
   public async getClipBlob(
     startTime: number,
     endTime: number,
-    options: {
-      convertAspectRatio?: string;
-      cropMode?: "letterbox" | "crop" | "stretch";
-    } = {}
+    options: ClipOptions = {}
   ): Promise<Blob | null> {
-    const { convertAspectRatio = "", cropMode = "letterbox" } = options;
+    const { convertAspectRatio = "original", cropMode = "letterbox" } = options;
+    const cacheKey = `${startTime}-${endTime}-${convertAspectRatio}-${cropMode}`;
 
-    logger.log("🎞️ Clip blob request received", {
-      requestedRange: { startTime, endTime },
-      totalChunks: this.recordedChunks.length,
-      bufferDuration: this.getBufferDuration(),
-      options,
-    });
-
-    if (this.recordedChunks.length === 0) {
-      logger.warn("⚠️ No recorded chunks available");
-      return null;
-    }
-
-    const aspectPart = convertAspectRatio
-      ? `${convertAspectRatio}_${cropMode}`
-      : "original";
-
-    const cacheKey = `${startTime}-${endTime}-${aspectPart}`;
     const cached = this.clipCache.get(cacheKey);
-
-    // && Date.now() - cached.cachedAt < this.clipCacheExpiry
-
-    if (cached) {
-      logger.log("📦 Using cached clip", { cacheKey });
+    if (cached && Date.now() - cached.cachedAt < this.cacheTTL) {
+      logger.log("📦 Using cached clip blob", {
+        cacheKey: cacheKey.slice(0, 50) + "...",
+        size: cached.blob.size,
+      });
       return cached.blob;
     }
 
+    if (typeof window === "undefined" || !window.electronAPI) {
+      logger.error("❌ ElectronAPI not available");
+      return null;
+    }
+
     try {
-      const chunkArrayBuffers = await Promise.all(
-        this.recordedChunks.map((chunk) => chunk.data.arrayBuffer())
-      );
-
-      logger.log("📥 Chunks assembled into ArrayBuffers");
-
-      const remuxedBuffer = await window.electronAPI.remuxClip(
-        chunkArrayBuffers,
+      logger.log("🎞️ Requesting new clip blob", {
         startTime,
         endTime,
-        { convertAspectRatio, cropMode }
-      );
-
-      const finalBlob = new Blob([remuxedBuffer], { type: "video/webm" });
-
-      this.clipCache.set(cacheKey, {
-        blob: finalBlob,
-        cachedAt: Date.now(),
+        duration: endTime - startTime,
+        options,
       });
 
-      this.cleanClipCache();
+      const result = await window.electronAPI.getClipBlob(
+        startTime,
+        endTime,
+        options
+      );
 
-      logger.log("✅ Clip blob ready", { size: finalBlob.size, cacheKey });
+      if (!result.success || !result.blob) {
+        logger.error("❌ Failed to retrieve clip blob:", result.error);
+        return null;
+      }
 
-      return finalBlob;
+      const blob = new Blob([result.blob], { type: "video/webm" });
+      this.clipCache.set(cacheKey, { blob, cachedAt: Date.now() });
+      this.cleanCache();
+
+      logger.log("✅ Clip blob received and cached", {
+        blobSize: blob.size,
+        sizeInMB: (blob.size / 1024 / 1024).toFixed(2),
+        cacheSize: this.clipCache.size,
+      });
+
+      return blob;
     } catch (error) {
-      logger.error("❌ Clip blob generation failed:", error);
+      logger.error("❌ Error during clip blob fetch:", error);
       return null;
     }
   }
 
-  private cleanClipCache(): void {
-    const now = Date.now();
-    const expiredKeys: string[] = [];
+  public async getBufferDuration(): Promise<number> {
+    if (typeof window === "undefined" || !window.electronAPI) {
+      return 0;
+    }
 
-    this.clipCache.forEach((value, key) => {
-      if (now - value.cachedAt > this.clipCacheExpiry) {
-        expiredKeys.push(key);
-      }
-    });
-
-    expiredKeys.forEach((key) => this.clipCache.delete(key));
-
-    if (expiredKeys.length > 0) {
-      logger.log(`🗑️ Cleaned ${expiredKeys.length} expired clip cache entries`);
+    try {
+      return await window.electronAPI.getBufferDuration();
+    } catch (error) {
+      logger.warn("⚠️ Failed to get buffer duration:", error);
+      return 0;
     }
   }
 
-  /**
-   * Returns the full current buffer as a single Blob.
-   */
-  public getCurrentBuffer(): Blob | null {
-    if (this.recordedChunks.length === 0) return null;
-
-    const allChunks = this.recordedChunks.map((chunk) => chunk.data);
-    return new Blob(allChunks, { type: "video/webm" });
+  public clearCache(): void {
+    this.clipCache.clear();
+    logger.log("🧹 Clip cache cleared");
   }
 
-  /**
-   * Gets the total duration of the current buffer in milliseconds.
-   */
-  public getBufferDuration(): number {
-    if (this.recordedChunks.length === 0) return 0;
+  public getCacheStats(): { size: number; totalMemoryMB: number } {
+    let totalSize = 0;
+    for (const entry of this.clipCache.values()) {
+      totalSize += entry.blob.size;
+    }
 
-    const first = this.recordedChunks[0];
-    const last = this.recordedChunks[this.recordedChunks.length - 1];
-    return last.timestamp - first.timestamp;
+    return {
+      size: this.clipCache.size,
+      totalMemoryMB: totalSize / 1024 / 1024,
+    };
   }
 
-  /**
-   * Indicates if recording is currently active.
-   */
-  public isCurrentlyRecording(): boolean {
-    return this.isRecording;
-  }
+  private cleanCache(): void {
+    const now = Date.now();
+    const expiredKeys: string[] = [];
 
-  /**
-   * Returns the Unix timestamp when recording started.
-   */
-  public getRecordingStartTime(): number | null {
-    return this.startTime;
+    for (const [key, entry] of this.clipCache.entries()) {
+      if (now - entry.cachedAt > this.cacheTTL) {
+        expiredKeys.push(key);
+        this.clipCache.delete(key);
+      }
+    }
+
+    if (expiredKeys.length > 0) {
+      logger.log(
+        `🗑️ Cleaned ${expiredKeys.length} expired clip(s). Remaining: ${this.clipCache.size}`
+      );
+    }
   }
 }
 
