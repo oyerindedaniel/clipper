@@ -34,9 +34,9 @@ import {
   DEFAULT_CLIP_PRE_MARK_MS,
   EXPORT_BITRATE_MAP,
 } from "../src/constants/app";
-import FFmpegRecordingService from "./services/obs-recording-service";
+import OBSRecordingService from "./services/obs-recording-service";
 
-const recordingService = FFmpegRecordingService.getInstance();
+const recordingService = OBSRecordingService.getInstance();
 
 let mainWindow: BrowserWindow | null = null;
 let twitchWindow: BrowserWindow | null = null;
@@ -136,13 +136,14 @@ async function startRecording(sourceId?: string): Promise<void> {
   if (isRecording) return;
 
   try {
-    logger.log({ sourceId, twitchWindow });
     const source = await captureManager.findBestCaptureSource(
       sourceId,
       twitchWindow
     );
 
     if (!source) throw new Error("No suitable capture source found");
+
+    logger.log({ sourceName: source.name, twitchWindow });
 
     const result = await recordingService.startRecording(source.name);
 
@@ -218,6 +219,7 @@ async function markClip(): Promise<void> {
     logger.log({ clipMarker });
 
     clipMarkers.push(clipMarker);
+    recordingService.clipMarkers = clipMarkers;
     mainWindow?.webContents.send("clip-marked", clipMarker);
   } catch (error) {
     logger.error("Failed to mark clip:", error);

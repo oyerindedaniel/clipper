@@ -125,7 +125,7 @@ async function setupOBS(): Promise<void> {
     }
   }
 
-  const configDir = path.join(OBS_TARGET_DIR, "config", "basic", "scenes");
+  const configDir = path.join(OBS_TARGET_DIR, "config");
   fs.mkdirSync(configDir, { recursive: true });
 
   logger.log("🎉 OBS Studio setup complete.");
