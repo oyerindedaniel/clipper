@@ -17,6 +17,7 @@ import {
   CropMode,
   ClipExportData,
   ClipMetadata,
+  ExportClip,
 } from "@/types/app";
 import { IpcRendererEvent } from "electron";
 import { toast } from "sonner";
@@ -306,6 +307,10 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
           return reject(new Error("No output path selected"));
         }
 
+        const response = await fetch(video.src);
+        const blob = await response.blob();
+        const arrayBuffer = await blob.arrayBuffer();
+
         const { width: clientWidth, height: clientHeight } =
           getVideoBoundingBox(video);
         const clientDisplaySize = { width: clientWidth, height: clientHeight };
@@ -342,7 +347,15 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
           targetResolution: targetResolutionDimensions,
         };
 
-        const result = await window.electronAPI.exportClip(exportData);
+        const exportClip: ExportClip = {
+          blob: arrayBuffer,
+          metadata: clipMetaDataRef.current,
+        };
+
+        const result = await window.electronAPI.exportClip(
+          exportClip,
+          exportData
+        );
 
         if (result.success) {
           closeAspectRatioModal();

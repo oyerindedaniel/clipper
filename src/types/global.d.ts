@@ -36,7 +36,8 @@ export interface ElectronAPI {
     }
   ) => Promise<ArrayBuffer>;
   exportClip: (
-    clipData: ClipExportData
+    clip: ExportClip,
+    data: ClipExportData
   ) => Promise<{ success: boolean; outputPath: string }>;
   selectOutputFolder: () => Promise<string | null>;
   getDesktopSources: () => Promise<DesktopSource[]>;

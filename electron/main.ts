@@ -21,7 +21,7 @@ import {
   TextOverlay,
   FontStyle,
   FontWeight,
-  ExportClipResponse,
+  ExportClip,
   ClipOptions,
   ClipResponse,
 } from "../src/types/app";
@@ -34,7 +34,7 @@ import {
   DEFAULT_CLIP_PRE_MARK_MS,
   EXPORT_BITRATE_MAP,
 } from "../src/constants/app";
-import FFmpegRecordingService from "./services/ffmpeg-recording-service";
+import FFmpegRecordingService from "./services/obs-recording-service";
 
 const recordingService = FFmpegRecordingService.getInstance();
 
@@ -161,8 +161,6 @@ async function startRecording(sourceId?: string): Promise<void> {
       sourceId: source.id,
       startTime: currentStream.startTime,
     });
-
-    cleanOldBuffers();
   } catch (err) {
     const msg = err instanceof Error ? err.message : "Unknown error";
     logger.error("Recording failed:", msg);
@@ -214,6 +212,7 @@ async function markClip(): Promise<void> {
       ...marker,
       streamStart: currentStream.startTime,
       bufferFile: currentStream.bufferFile,
+      exported: false,
     };
 
     logger.log({ clipMarker });
@@ -292,7 +291,7 @@ async function clipBlob(
 }
 
 /**
- * Export clip by requesting renderer to handle it.
+ * Export clip
  */
 async function exportClip(
   data: ClipExportData
@@ -307,6 +306,14 @@ async function exportClip(
 
     if (!result.success) {
       throw new Error(result.error || "Failed to export clip");
+    }
+
+    const clipIndex = clipMarkers.findIndex((marker) => marker.id === data.id);
+    if (clipIndex !== -1) {
+      clipMarkers[clipIndex] = { ...clipMarkers[clipIndex], exported: true };
+      logger.log(`✅ Marked clip as exported: ${data.id}`);
+    } else {
+      logger.warn(`Clip marker not found for ID: ${data.id}`);
     }
 
     logger.log("✅ Clip exported successfully", { outputPath: output });
@@ -639,10 +646,10 @@ function renderTextWithSpacing(
  * Process clip blob with FFmpeg
  */
 async function processClipForExport(
-  response: ExportClipResponse,
+  clip: ExportClip,
   data: ClipExportData
 ): Promise<{ success: boolean; outputPath: string }> {
-  const { blob, metadata } = response;
+  const { blob, metadata } = clip;
 
   logger.log("🎬 Starting clip export process", {
     clipId: data.id,
@@ -817,6 +824,18 @@ async function processClipForExport(
         }
 
         if (code === 0) {
+          const clipIndex = clipMarkers.findIndex(
+            (marker) => marker.id === data.id
+          );
+          if (clipIndex !== -1) {
+            clipMarkers[clipIndex] = {
+              ...clipMarkers[clipIndex],
+              exported: true,
+            };
+            logger.log(`✅ Marked clip as exported: ${data.id}`);
+          } else {
+            logger.warn(`Clip marker not found for ID: ${data.id}`);
+          }
           logger.log("✅ Clip export successful", {
             clipId: data.id,
             outputPath: output,
@@ -824,6 +843,7 @@ async function processClipForExport(
               ? fs.statSync(output).size
               : "unknown",
           });
+          mainWindow?.webContents.send("clip-exported", { clipId: data.id });
           resolve({ success: true, outputPath: output });
         } else {
           const errorMsg = `FFmpeg exited with code ${code}`;
@@ -855,10 +875,10 @@ async function processClipForExport(
  * Enhanced clip export with canvas-based text rendering
  */
 async function processClipForExportWithCanvas(
-  response: ExportClipResponse,
+  clip: ExportClip,
   data: ClipExportData
 ): Promise<{ success: boolean; outputPath: string }> {
-  const { blob, metadata } = response;
+  const { blob, metadata } = clip;
   const { exportSettings, clientDisplaySize, targetResolution } = data;
 
   try {
@@ -1006,6 +1026,20 @@ async function processClipForExportWithCanvas(
           }
 
           if (code === 0) {
+            const clipIndex = clipMarkers.findIndex(
+              (marker) => marker.id === data.id
+            );
+            if (clipIndex !== -1) {
+              clipMarkers[clipIndex] = {
+                ...clipMarkers[clipIndex],
+                exported: true,
+              };
+              logger.log(`✅ Marked clip as exported: ${data.id}`);
+            } else {
+              logger.warn(`Clip marker not found for ID: ${data.id}`);
+            }
+
+            mainWindow?.webContents.send("clip-exported", { clipId: data.id });
             resolve({ success: true, outputPath: output });
           } else {
             reject(new Error(`FFmpeg exited with code ${code}`));
@@ -1057,6 +1091,26 @@ async function processClipForExportWithCanvas(
             fs.unlinkSync(tempInput);
           } catch (e) {}
           if (code === 0) {
+            const clipIndex = clipMarkers.findIndex(
+              (marker) => marker.id === data.id
+            );
+            if (clipIndex !== -1) {
+              clipMarkers[clipIndex] = {
+                ...clipMarkers[clipIndex],
+                exported: true,
+              };
+              logger.log(`✅ Marked clip as exported: ${data.id}`);
+            } else {
+              logger.warn(`Clip marker not found for ID: ${data.id}`);
+            }
+            logger.log("✅ Clip export successful", {
+              clipId: data.id,
+              outputPath: output,
+              outputSize: fs.existsSync(output)
+                ? fs.statSync(output).size
+                : "unknown",
+            });
+            mainWindow?.webContents.send("clip-exported", { clipId: data.id });
             resolve({ success: true, outputPath: output });
           } else {
             reject(new Error(`FFmpeg exited with code ${code}`));
@@ -1623,21 +1677,6 @@ async function convertVideoAspectRatio(
 }
 
 /**
- * Remove outdated buffer files.
- */
-function cleanOldBuffers(): void {
-  const cutoff = Date.now() - 15 * 60 * 1000;
-  try {
-    for (const f of fs.readdirSync(bufferDir)) {
-      const full = path.join(bufferDir, f);
-      if (fs.statSync(full).mtime.getTime() < cutoff) fs.unlinkSync(full);
-    }
-  } catch (err) {
-    logger.error("Buffer cleanup failed:", err);
-  }
-}
-
-/**
  * Register all IPC channels.
  */
 function setupIpc(): void {
@@ -1715,9 +1754,9 @@ function setupIpc(): void {
 
   ipcMain.handle(
     "export-clip",
-    async (_: IpcMainInvokeEvent, data: ClipExportData) => {
+    async (_: IpcMainInvokeEvent, clip: ExportClip, data: ClipExportData) => {
       try {
-        return await exportClip(data);
+        return await processClipForExportWithCanvas(clip, data);
       } catch (err) {
         return {
           success: false,
@@ -1856,7 +1895,7 @@ app
     fontManager.cleanup();
     globalShortcut.unregisterAll();
     if (isRecording) stopRecording();
-    cleanOldBuffers();
+    recordingService.cleanup();
   })
   .on("certificate-error", (event, _, url, __, ___, callback) => {
     if (url.includes("twitch.tv")) {

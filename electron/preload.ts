@@ -5,6 +5,7 @@ import {
   ClipOptions,
   ClipResponse,
   DesktopSource,
+  ExportClip,
   ExportProgressInfo,
   RecordingStartedInfo,
 } from "../src/types/app";
@@ -30,9 +31,10 @@ contextBridge.exposeInMainWorld("electronAPI", {
   getClipMarkers: (): Promise<ClipMarker[]> =>
     ipcRenderer.invoke("get-clip-markers"),
   exportClip: (
-    clipData: ClipExportData
+    clip: ExportClip,
+    data: ClipExportData
   ): Promise<{ success: boolean; outputPath: string }> =>
-    ipcRenderer.invoke("export-clip", clipData),
+    ipcRenderer.invoke("export-clip", clip, data),
   selectOutputFolder: (): Promise<string | null> =>
     ipcRenderer.invoke("select-output-folder"),
   getDesktopSources: (): Promise<DesktopSource[]> =>

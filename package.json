@@ -9,10 +9,11 @@
     "lint": "next lint",
     "type-check": "tsc --noEmit",
     "electron:rebuild": "tsx scripts/rebuild-electron.ts",
-    "postinstall": "electron-builder install-app-deps",
+    "postinstall": "electron-builder install-app-deps && pnpm run setup-obs && pnpm run copy-fonts",
+    "setup-obs": "tsx scripts/setup-obs.ts",
     "copy-fonts": "tsx scripts/copy-fonts.ts",
-    "electron:dev": "cross-env NODE_ENV=development pnpm run electron:compile && pnpm run copy-fonts && concurrently \"cross-env NODE_ENV=development pnpm run dev\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development pnpm exec electron dist/electron/main.js\"",
-    "electron:build": "pnpm run build && pnpm run electron:compile && pnpm run copy-fonts",
+    "electron:dev": "cross-env NODE_ENV=development pnpm run electron:compile && concurrently \"cross-env NODE_ENV=development pnpm run dev\" \"wait-on http://localhost:3000 && cross-env NODE_ENV=development pnpm exec electron dist/electron/main.js\"",
+    "electron:build": "pnpm run build && pnpm run electron:compile",
     "electron:compile": "tsc --project tsconfig.electron.json",
     "electron:pack": "cross-env ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES=true pnpm run electron:build && electron-builder",
     "electron:dist": "cross-env ELECTRON_BUILDER_ALLOW_UNRESOLVED_DEPENDENCIES=true pnpm run electron:build && electron-builder --publish=never",
@@ -96,6 +97,13 @@
           "**/*.otf",
           "**/*.woff",
           "**/*.woff2"
+        ]
+      },
+      {
+        "from": "obs-binaries",
+        "to": "obs-studio-portable",
+        "filter": [
+          "**/*"
         ]
       }
     ],
