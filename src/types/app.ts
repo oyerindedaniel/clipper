@@ -9,7 +9,6 @@ export interface ClipMarker {
   endTime: number;
   markedAt: number;
   streamStart: number;
-  bufferFile: string;
   exported?: boolean;
 }
 

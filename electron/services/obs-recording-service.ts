@@ -6,7 +6,6 @@ import * as os from "os";
 import { app } from "electron";
 import logger from "../../src/utils/logger";
 import { ClipMarker } from "../../src/types/app";
-
 import {
   CLIP_BUFFER_MS,
   DEFAULT_CLIP_POST_MARK_MS,
@@ -17,7 +16,6 @@ import {
 interface RecordingSession {
   process: ChildProcess | null;
   startTime: number;
-  bufferFile: string;
   windowTitle?: string;
   isActive: boolean;
 }
@@ -28,12 +26,11 @@ class OBSRecordingService {
   private readonly bufferDir: string;
   private readonly obsDir: string;
   private readonly obsConfigDir: string;
-  private readonly maxBufferDuration = 15 * 60 * 1000; // ms
 
   public clipMarkers: ClipMarker[] = [];
 
   private constructor() {
-    this.bufferDir = path.join(os.tmpdir(), "twitch-recorder-buffer");
+    this.bufferDir = path.join(os.homedir(), "twitch-recorder-buffer");
     const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
     this.obsDir = path.join(
       isDev ? path.resolve(__dirname, "..", "..") : process.resourcesPath,
@@ -51,7 +48,6 @@ class OBSRecordingService {
     );
 
     fs.mkdirSync(this.bufferDir, { recursive: true });
-    // this.initializeOBSConfig();
   }
 
   public static getInstance(): OBSRecordingService {
@@ -64,12 +60,9 @@ class OBSRecordingService {
   private initializeOBSConfig(windowTitle?: string): void {
     logger.log("🛠 Initializing OBS configuration...");
 
-    if (!fs.existsSync(this.obsConfigDir)) {
-      fs.mkdirSync(this.obsConfigDir, { recursive: true });
-    }
+    fs.mkdirSync(this.obsConfigDir, { recursive: true });
 
     // === 1. Write Profile Configuration ===
-
     const profileDir = path.join(
       this.obsConfigDir,
       "basic",
@@ -79,94 +72,421 @@ class OBSRecordingService {
     fs.mkdirSync(profileDir, { recursive: true });
 
     const basicConfig = `[General]
-   Name=TwitchRecorder
-   [Video]
-   BaseCX=1920
-   BaseCY=1080
-   OutputCX=1920
-   OutputCY=1080
-   FPSType=0
-   FPSCommon=30
-   [Output]
-   Mode=Simple
-   FilePath=${this.bufferDir.replace(/\\/g, "/")}
-   RecFormat=mkv
-   RecEncoder=x264
-   RecRB=false
-   RecRBTime=20
-   RecRBSize=512
-   [Audio]
-   SampleRate=44100
-   ChannelSetup=Stereo
-   `;
+Name=TwitchRecorder
 
-    const profileConfigPath = path.join(profileDir, "basic.ini");
-    fs.writeFileSync(profileConfigPath, basicConfig);
+[Output]
+Mode=Simple
+FilenameFormatting=%CCYY-%MM-%DD %hh-%mm-%ss
+DelayEnable=false
+DelaySec=20
+DelayPreserve=true
+Reconnect=true
+RetryDelay=2
+MaxRetries=25
+BindIP=default
+IPFamily=IPv4+IPv6
+NewSocketLoopEnable=false
+LowLatencyEnable=false
+
+[Stream1]
+IgnoreRecommended=false
+EnableMultitrackVideo=false
+MultitrackVideoMaximumAggregateBitrateAuto=true
+MultitrackVideoMaximumVideoTracksAuto=true
+
+[SimpleOutput]
+FilePath=${this.bufferDir.replace(/\\/g, "/")}
+RecFormat2=mkv
+VBitrate=2500
+ABitrate=160
+UseAdvanced=false
+Preset=veryfast
+NVENCPreset2=p5
+RecQuality=Small
+RecRB=false
+RecRBTime=20
+RecRBSize=512
+RecRBPrefix=Replay
+StreamAudioEncoder=aac
+RecAudioEncoder=aac
+RecTracks=1
+StreamEncoder=x264
+RecEncoder=x264
+
+[AdvOut]
+ApplyServiceSettings=true
+UseRescale=false
+TrackIndex=1
+VodTrackIndex=2
+Encoder=obs_x264
+RecType=Standard
+RecFilePath=${this.bufferDir.replace(/\\/g, "/")}
+RecFormat2=mkv
+RecUseRescale=false
+RecTracks=1
+RecEncoder=none
+FLVTrack=1
+StreamMultiTrackAudioMixes=1
+FFOutputToFile=true
+FFFilePath=${this.bufferDir.replace(/\\/g, "/")}
+FFExtension=mp4
+FFVBitrate=2500
+FFVGOPSize=250
+FFUseRescale=false
+FFIgnoreCompat=false
+FFABitrate=160
+FFAudioMixes=1
+Track1Bitrate=160
+Track2Bitrate=160
+Track3Bitrate=160
+Track4Bitrate=160
+Track5Bitrate=160
+Track6Bitrate=160
+RecSplitFileTime=15
+RecSplitFileSize=2048
+RecRB=false
+RecRBTime=20
+RecRBSize=512
+AudioEncoder=ffmpeg_aac
+RecAudioEncoder=ffmpeg_aac
+
+[Video]
+BaseCX=1920
+BaseCY=1080
+OutputCX=1920
+OutputCY=1080
+FPSType=0
+FPSCommon=30
+FPSInt=30
+FPSNum=30
+FPSDen=1
+ScaleType=bicubic
+ColorFormat=NV12
+ColorSpace=709
+ColorRange=Partial
+SdrWhiteLevel=300
+HdrNominalPeakLevel=1000
+
+[Audio]
+MonitoringDeviceId=default
+MonitoringDeviceName=Default
+SampleRate=48000
+ChannelSetup=Stereo
+MeterDecayRate=23.53
+PeakMeterType=0
+
+[Panels]
+CookieId=B589D39DEF8809C0
+`;
+
+    fs.writeFileSync(path.join(profileDir, "basic.ini"), basicConfig);
 
     // === 2. Write Scene Collection File ===
-
     const scenesDir = path.join(this.obsConfigDir, "basic", "scenes");
     fs.mkdirSync(scenesDir, { recursive: true });
 
     const sceneCollection = {
+      DesktopAudioDevice1: {
+        prev_ver: 520159234,
+        name: "Desktop Audio",
+        uuid: "8e37488f-1979-4161-8667-f776720c58c7",
+        id: "wasapi_output_capture",
+        versioned_id: "wasapi_output_capture",
+        settings: {
+          device_id: "default",
+        },
+        mixers: 255,
+        sync: 0,
+        flags: 0,
+        volume: 1.0,
+        balance: 0.5,
+        enabled: true,
+        muted: false,
+        "push-to-mute": false,
+        "push-to-mute-delay": 0,
+        "push-to-talk": false,
+        "push-to-talk-delay": 0,
+        hotkeys: {
+          "libobs.mute": [],
+          "libobs.unmute": [],
+          "libobs.push-to-mute": [],
+          "libobs.push-to-talk": [],
+        },
+        deinterlace_mode: 0,
+        deinterlace_field_order: 0,
+        monitoring_type: 0,
+        private_settings: {},
+      },
+      current_scene: "Scene",
+      current_program_scene: "Scene",
+      scene_order: [
+        {
+          name: "Scene",
+        },
+      ],
       name: "TwitchRecorder",
-      current_scene: "Recording Scene",
-      current_program_scene: "Recording Scene",
-      scene_order: [{ name: "Recording Scene" }],
       sources: [
         {
-          name: "Recording Scene",
+          prev_ver: 520159234,
+          name: "Scene",
+          uuid: "c0224ae8-b84d-41ee-840d-837737bc9856",
           id: "scene",
-          type: "scene",
+          versioned_id: "scene",
           settings: {
+            id_counter: 1,
+            custom_size: false,
             items: [
               {
                 name: "Window Capture",
-                source_name: "Window Capture",
-              },
-              {
-                name: "Desktop Audio",
-                source_name: "Desktop Audio",
+                source_uuid: "da437634-8ed9-435c-9fc2-b72863d959d2",
+                visible: true,
+                locked: false,
+                rot: 0.0,
+                scale_ref: {
+                  x: 1920.0,
+                  y: 1080.0,
+                },
+                align: 5,
+                bounds_type: 0,
+                bounds_align: 0,
+                bounds_crop: false,
+                crop_left: 0,
+                crop_top: 0,
+                crop_right: 0,
+                crop_bottom: 0,
+                id: 1,
+                group_item_backup: false,
+                pos: {
+                  x: 0.0,
+                  y: 0.0,
+                },
+                pos_rel: {
+                  x: -1.7777777910232544,
+                  y: -1.0,
+                },
+                scale: {
+                  x: 1.0,
+                  y: 1.0,
+                },
+                scale_rel: {
+                  x: 1.0,
+                  y: 1.0,
+                },
+                bounds: {
+                  x: 0.0,
+                  y: 0.0,
+                },
+                bounds_rel: {
+                  x: 0.0,
+                  y: 0.0,
+                },
+                scale_filter: "disable",
+                blend_method: "default",
+                blend_type: "normal",
+                show_transition: {
+                  duration: 0,
+                },
+                hide_transition: {
+                  duration: 0,
+                },
+                private_settings: {},
               },
             ],
           },
+          mixers: 0,
+          sync: 0,
+          flags: 0,
+          volume: 1.0,
+          balance: 0.5,
+          enabled: true,
+          muted: false,
+          "push-to-mute": false,
+          "push-to-mute-delay": 0,
+          "push-to-talk": false,
+          "push-to-talk-delay": 0,
+          hotkeys: {
+            "OBSBasic.SelectScene": [],
+            "libobs.show_scene_item.1": [],
+            "libobs.hide_scene_item.1": [],
+          },
+          deinterlace_mode: 0,
+          deinterlace_field_order: 0,
+          monitoring_type: 0,
+          canvas_uuid: "6c69626f-6273-4c00-9d88-c5136d61696e",
+          private_settings: {},
         },
         {
+          prev_ver: 520159234,
           name: "Window Capture",
+          uuid: "da437634-8ed9-435c-9fc2-b72863d959d2",
           id: "window_capture",
-          type: "window_capture",
+          versioned_id: "window_capture",
           settings: {
-            window: `electron.exe:${windowTitle}`,
-            capture_cursor: true,
+            window: `${windowTitle || ""}:Chrome_WidgetWin_1:electron.exe`,
+            capture_audio: true,
           },
-        },
-        {
-          name: "Desktop Audio",
-          id: "wasapi_output_capture",
-          type: "wasapi_output_capture",
-          settings: {
-            device_id: "default",
+          mixers: 255,
+          sync: 0,
+          flags: 0,
+          volume: 1.0,
+          balance: 0.5,
+          enabled: true,
+          muted: false,
+          "push-to-mute": false,
+          "push-to-mute-delay": 0,
+          "push-to-talk": false,
+          "push-to-talk-delay": 0,
+          hotkeys: {
+            "libobs.mute": [],
+            "libobs.unmute": [],
+            "libobs.push-to-mute": [],
+            "libobs.push-to-talk": [],
           },
+          deinterlace_mode: 0,
+          deinterlace_field_order: 0,
+          monitoring_type: 0,
+          private_settings: {},
         },
       ],
       groups: [],
+      quick_transitions: [
+        {
+          name: "Cut",
+          duration: 300,
+          hotkeys: [],
+          id: 1,
+          fade_to_black: false,
+        },
+        {
+          name: "Fade",
+          duration: 300,
+          hotkeys: [],
+          id: 2,
+          fade_to_black: false,
+        },
+        {
+          name: "Fade",
+          duration: 300,
+          hotkeys: [],
+          id: 3,
+          fade_to_black: true,
+        },
+      ],
+      transitions: [],
+      saved_projectors: [],
+      canvases: [],
+      current_transition: "Fade",
+      transition_duration: 300,
+      preview_locked: false,
+      scaling_enabled: false,
+      scaling_level: -12,
+      scaling_off_x: 0.0,
+      scaling_off_y: 0.0,
+      modules: {
+        "scripts-tool": [],
+        "output-timer": {
+          streamTimerHours: 0,
+          streamTimerMinutes: 0,
+          streamTimerSeconds: 30,
+          recordTimerHours: 0,
+          recordTimerMinutes: 0,
+          recordTimerSeconds: 30,
+          autoStartStreamTimer: false,
+          autoStartRecordTimer: false,
+          pauseRecordTimer: true,
+        },
+        "auto-scene-switcher": {
+          interval: 300,
+          non_matching_scene: "",
+          switch_if_not_matching: false,
+          active: false,
+          switches: [],
+        },
+        captions: {
+          source: "",
+          enabled: false,
+          lang_id: 2057,
+          provider: "mssapi",
+        },
+      },
+      resolution: {
+        x: 1920,
+        y: 1080,
+      },
       version: 2,
     };
 
-    const sceneCollectionPath = path.join(scenesDir, "TwitchRecorder.json");
     fs.writeFileSync(
-      sceneCollectionPath,
+      path.join(scenesDir, "TwitchRecorder.json"),
       JSON.stringify(sceneCollection, null, 2)
     );
 
-    // === 3. Write scenes.json pointer to select active scene collection ===
-    const scenePointerPath = path.join(scenesDir, "scenes.json");
+    // === 3. Write scenes.json to set active scene collection ===
     const scenePointer = {
       current: "TwitchRecorder",
+      version: 1,
     };
-    fs.writeFileSync(scenePointerPath, JSON.stringify(scenePointer, null, 2));
+    fs.writeFileSync(
+      path.join(scenesDir, "scenes.json"),
+      JSON.stringify(scenePointer, null, 2)
+    );
 
-    logger.log("✅ OBS configuration written to disk");
+    // === 4. Write global.ini to enforce profile & scene collection ===
+    const globalIni = `[General]
+ProfileDir=TwitchRecorder
+SceneCollectionFile=TwitchRecorder
+FirstRun=false
+OpenStatsOnStartup=false
+ShowWhatsNew=false
+WarnBeforeStartingStream=false
+WarnBeforeStoppingStream=false
+RecordWhenStreaming=false
+KeepRecordingWhenStreamStops=true
+SysTrayEnabled=true
+SysTrayWhenStarted=true
+SaveProjectors=false
+SnappingEnabled=true
+ScreenSnapping=true
+CenterSnapping=false
+SourceSnapping=true
+SnapDistance=10.0
+FreeAspectRatio=false
+AutoRemux=true
+Theme=Dark
+CurrentTheme=com.obsproject.Acri.Dark
+Language=en-US
+EnableAutoUpdates=false
+HideOBSFromCapture=false
+HotkeyFocusType=NeverDisableHotkeys
+AdapterIdx=0
+OpenStatsOnStartup=false
+PauseRecordingWhenMinimized=false
+AutoConfigRun=false
+AutoConfig=false
+
+[BasicWindow]
+geometry=AdnQywADAAAAAAAAAAAAFwAAB38AAAQTAAAAAAAAABcAAAd/AAAEEwAAAAAAAAAAB4AAAAAAAAAAF
+state=AAAA/wAAAAD9AAAAAgAAAAEAAAJcAAADgfwCAAAAAfsAAAAKAHMAYwBlAG4AZQBzAQAAADkAAAOBAAAA3AAEAB8AAAABAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAD9AAAAAwAAAAAAAAGAAAAC0fwBAAAAAfwAAAAAAAAAAAGAAAAA3wEAAAADAAAAAA==
+SplitterState=eJxjYGBgkGACBiYgxowkwwwKDlDASoEBhjGBDhQKBQUFDiBCIBAAi8MB
+DockLocked=true
+
+[PropertiesWindow]
+geometry=AdnQywADAAAAAAAAAAAAFwAAB38AAAQTAAAAAAAAABcAAAd/AAAEEwAAAAAAAAAAB4AAAAAAAAAAF
+
+[SceneCollectionImporter]
+geometry=AdnQywADAAAAAAAAAAAAFwAAB38AAAQTAAAAAAAAABcAAAd/AAAEEwAAAAAAAAAAB4AAAAAAAAAAF
+
+[RemuxFiles]
+geometry=AdnQywADAAAAAAAAAAAAFwAAB38AAAQTAAAAAAAAABcAAAd/AAAEEwAAAAAAAAAAB4AAAAAAAAAAF
+
+[OBSApp]
+FirstRun=false
+`;
+
+    const globalIniPath = path.join(this.obsConfigDir, "global.ini");
+    fs.writeFileSync(globalIniPath, globalIni);
+
+    logger.log("✅ OBS configuration updated with working settings");
   }
 
   private getOBSExecutable(): string {
@@ -191,7 +511,7 @@ class OBSRecordingService {
     this.initializeOBSConfig(windowTitle);
 
     // Wait a moment for OBS to initialize
-    await new Promise((resolve) => setTimeout(resolve, 3000));
+    await new Promise((resolve) => setTimeout(resolve, 2000));
 
     const obsPath = this.getOBSExecutable();
     if (!fs.existsSync(obsPath)) {
@@ -201,31 +521,40 @@ class OBSRecordingService {
 
     logger.log("▶️ Launching OBS for recording...");
     const startTime = Date.now();
-    const outputPath = path.join(this.bufferDir, `recording_${startTime}.mkv`);
 
     try {
-      // OBS CLI arguments for headless recording
-      const args = [
-        "--portable",
-        "--profile",
-        "TwitchRecorder",
-        "--scene-collection",
-        "TwitchRecorder",
-        "--startrecording",
-        "--disable-updater",
-        "--minimize-to-tray",
-      ];
+      // const args = [
+      //   "--portable",
+      //   "--profile",
+      //   "TwitchRecorder",
+      //   "--collection",
+      //   "TwitchRecorder",
+      //   "--disable-updater",
+      //   "--disable-shutdown-check",
+      //   "--unfiltered_log",
+      //   "--verbose",
+      //   "--minimize-to-tray",
+      //   "--startrecording",
+      // ];
+
+      const args = ["--portable"];
 
       const obsProcess = spawn(obsPath, args, {
         stdio: ["ignore", "pipe", "pipe"],
         cwd: path.dirname(obsPath),
-        env: process.env,
+        env: {
+          ...process.env,
+          OBS_USE_NEW_MPEGTS_OUTPUT: "false",
+          // Disable auto config
+          OBS_DISABLE_AUTOUPDATE: "1",
+          OBS_DISABLE_AUTO_CONFIG: "1",
+        },
+        detached: false,
       });
 
       this.currentSession = {
         process: obsProcess,
         startTime,
-        bufferFile: outputPath,
         windowTitle,
         isActive: true,
       };
@@ -233,7 +562,6 @@ class OBSRecordingService {
       logger.log(
         `📽 OBS recording started at ${new Date(startTime).toISOString()}`
       );
-      logger.log("📁 Output file path:", outputPath);
 
       obsProcess.stdout.on("data", (data: Buffer) => {
         const output = data.toString();
@@ -263,7 +591,6 @@ class OBSRecordingService {
         }
       });
 
-      this.startBufferCleanup();
       logger.log("✅ OBS recording started successfully");
       return { success: true };
     } catch (error) {
@@ -321,24 +648,45 @@ class OBSRecordingService {
 
     try {
       const recordingFile = this.getCurrentRecordingFile();
-      if (!recordingFile || !fs.existsSync(recordingFile)) {
+
+      logger.log("------------------", recordingFile);
+
+      if (!recordingFile) {
         return { success: false, error: "Recording file not found" };
       }
 
-      const startSeconds = startTimeMs / 1000;
-      const duration = (endTimeMs - startTimeMs) / 1000;
+      logger.log("------------------ after", recordingFile);
+
+      const startSec = (startTimeMs / 1000).toFixed(3);
+      const requestedDurationSec = ((endTimeMs - startTimeMs) / 1000).toFixed(
+        3
+      );
 
       const args = [
         "-ss",
-        startSeconds.toString(),
+        startSec, // Seek to start position
         "-i",
-        recordingFile,
+        recordingFile, // Input file
         "-t",
-        duration.toString(),
-        "-c",
-        "copy",
+        requestedDurationSec, // Use requested duration, FFmpeg will stop when data runs out
+        "-c:v",
+        "copy", // Copy video stream without re-encoding
+        "-c:a",
+        "copy", // Copy audio stream without re-encoding
         "-avoid_negative_ts",
-        "make_zero",
+        "make_zero", // Handle negative timestamps
+        "-fflags",
+        "+genpts", // Generate presentation timestamps
+        "-map",
+        "0:v:0", // Explicitly map first video stream
+        "-map",
+        "0:a:0", // Explicitly map first audio stream
+        "-async",
+        "1", // Audio sync method
+        "-fps_mode",
+        "passthrough",
+        "-copyts", // Copy input timestamps
+        "-start_at_zero", // Start output at zero timestamp
         "-y",
         outputPath,
       ];
@@ -387,11 +735,18 @@ class OBSRecordingService {
     }
 
     try {
-      await this.waitUntilBufferCatchesUp(postMarkDurationMs + CLIP_BUFFER_MS);
       const now = Date.now();
       const relativeTime = now - this.currentSession.startTime;
+      const desiredEnd = relativeTime + postMarkDurationMs;
+      const target = desiredEnd + CLIP_BUFFER_MS;
+
+      await this.waitUntilBufferCatchesUp(
+        target,
+        target + WAIT_UNTIL_BUFFER_TIMEOUT_MS
+      );
+
       const clipStart = Math.max(0, relativeTime - preMarkDurationMs);
-      const clipEnd = relativeTime + postMarkDurationMs;
+      const clipEnd = desiredEnd;
 
       return {
         id: `clip_${now}`,
@@ -399,7 +754,6 @@ class OBSRecordingService {
         endTime: clipEnd,
         markedAt: now,
         streamStart: this.currentSession.startTime,
-        bufferFile: this.currentSession.bufferFile,
       };
     } catch (error) {
       logger.error("Failed to create clip marker:", error);
@@ -425,6 +779,7 @@ class OBSRecordingService {
   }
 
   public getBufferDuration(): number {
+    logger.log({ currentSession: this.currentSession });
     if (!this.currentSession?.isActive) return 0;
     return Date.now() - this.currentSession.startTime;
   }
@@ -445,84 +800,29 @@ class OBSRecordingService {
     try {
       const files = fs
         .readdirSync(this.bufferDir)
-        .filter(
-          (file) => file.startsWith("recording_") && file.endsWith(".mkv")
-        )
-        .map((file) => ({
-          name: file,
-          path: path.join(this.bufferDir, file),
-          mtime: fs.statSync(path.join(this.bufferDir, file)).mtime,
-        }))
+        .filter((file) => {
+          const isMkv = file.endsWith(".mkv");
+
+          const matchesOBSFormat =
+            /^\d{4}-\d{2}-\d{2} \d{2}-\d{2}-\d{2}\.mkv$/.test(file);
+
+          return isMkv && matchesOBSFormat;
+        })
+        .map((file) => {
+          const fullPath = path.join(this.bufferDir, file);
+          return {
+            name: file,
+            path: fullPath,
+            mtime: fs.statSync(fullPath).mtime,
+          };
+        })
         .sort((a, b) => b.mtime.getTime() - a.mtime.getTime());
 
-      return files[0]?.path || null;
+      return files[0]?.path ?? null;
     } catch (error) {
       logger.error("Error finding current recording file:", error);
       return null;
     }
-  }
-
-  private async getEarliestPendingMarkerTime(): Promise<number | null> {
-    try {
-      const clipMarkers: ClipMarker[] = this.clipMarkers;
-      if (!clipMarkers || clipMarkers.length === 0) {
-        return null;
-      }
-
-      let earliestTime: number | null = null;
-      for (const marker of clipMarkers) {
-        // Use startTime, which accounts for preMarkDurationMs
-        const markerStartTime = marker.startTime + marker.streamStart;
-        if (earliestTime === null || markerStartTime < earliestTime) {
-          earliestTime = markerStartTime;
-        }
-      }
-
-      return earliestTime;
-    } catch (error) {
-      logger.error("⚠️ Failed to get clip markers for cleanup:", error);
-      return null;
-    }
-  }
-
-  private async startBufferCleanup(): Promise<void> {
-    logger.log("🧼 Starting buffer cleanup loop");
-
-    const cleanup = async () => {
-      const cutoffTime = Date.now() - this.maxBufferDuration;
-      const earliestMarkerTime = await this.getEarliestPendingMarkerTime();
-
-      const safeCutoffTime =
-        earliestMarkerTime !== null
-          ? Math.max(cutoffTime, earliestMarkerTime)
-          : cutoffTime;
-
-      try {
-        const files = fs.readdirSync(this.bufferDir);
-        for (const file of files) {
-          const filePath = path.join(this.bufferDir, file);
-          const stats = fs.statSync(filePath);
-
-          // Only delete files older than the safe cutoff
-          if (stats.mtime.getTime() < safeCutoffTime) {
-            // Verify the file is from the current session
-            if (
-              this.currentSession &&
-              file.startsWith("recording_") &&
-              file.endsWith(".mkv")
-            ) {
-              fs.unlinkSync(filePath);
-              logger.log(`🗑 Deleted old buffer segment: ${file}`);
-            }
-          }
-        }
-      } catch (error) {
-        logger.warn("Buffer cleanup warning:", error);
-      }
-    };
-
-    await cleanup();
-    setInterval(cleanup, 5 * 60 * 1000);
   }
 
   public cleanup(): void {

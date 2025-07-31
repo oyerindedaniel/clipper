@@ -47,7 +47,7 @@ let currentStream: StreamSession | null = null;
 
 let postMarkDurationMs = DEFAULT_CLIP_POST_MARK_MS;
 
-const bufferDir = path.join(os.tmpdir(), "twitch-recorder-buffer");
+const bufferDir = path.join(os.homedir(), "twitch-recorder-buffer");
 const captureManager = DesktopCaptureManager.getInstance();
 
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
@@ -212,7 +212,6 @@ async function markClip(): Promise<void> {
     const clipMarker: ClipMarker = {
       ...marker,
       streamStart: currentStream.startTime,
-      bufferFile: currentStream.bufferFile,
       exported: false,
     };
 
