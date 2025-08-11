@@ -4,6 +4,7 @@ import * as os from "os";
 import { deregisterAllFonts, registerFont } from "canvas";
 import logger from "../../src/utils/logger";
 import { FontDefinition, FontStyle, FontWeight } from "../../src/types/app";
+import { app } from "electron";
 
 type CanvasFontOptions = Parameters<typeof registerFont>[1];
 
@@ -353,7 +354,12 @@ class FontManager {
 logger.info("🟡 Initializing FontManager and loading bundled fonts...");
 
 const fontManager = FontManager.getInstance();
-const bundledFontsDir = path.join(__dirname, "..", "..", "assets", "fonts");
+const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
+const bundledFontsDir = path.join(
+  isDev ? path.resolve(__dirname, "..", "..") : process.resourcesPath,
+  "assets",
+  "fonts"
+);
 
 if (fs.existsSync(bundledFontsDir)) {
   fontManager.loadFontsFromDirectory(bundledFontsDir);

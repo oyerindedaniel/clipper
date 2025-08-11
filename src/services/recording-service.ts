@@ -6,8 +6,7 @@ interface ClipCacheEntry {
   cachedAt: number;
 }
 
-/** Provides access to FFmpeg-recorded video clips with in-memory caching. */
-
+/** Provides access to recorded video clips with in-memory caching. */
 class RecordingService {
   private static instance: RecordingService | null = null;
   private readonly clipCache: Map<string, ClipCacheEntry> = new Map();
@@ -80,6 +79,7 @@ class RecordingService {
 
   public async getBufferDuration(): Promise<number> {
     if (typeof window === "undefined" || !window.electronAPI) {
+      logger.error("❌ ElectronAPI not available");
       return 0;
     }
 

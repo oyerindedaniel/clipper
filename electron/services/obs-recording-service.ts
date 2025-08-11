@@ -5,7 +5,7 @@ import * as fs from "fs";
 import * as os from "os";
 import { app } from "electron";
 import logger from "../../src/utils/logger";
-import { ClipMarker } from "../../src/types/app";
+import { ClipMarker, Success, Failure } from "../../src/types/app";
 import {
   CLIP_BUFFER_MS,
   DEFAULT_CLIP_POST_MARK_MS,
@@ -14,7 +14,7 @@ import {
 } from "../../src/constants/app";
 
 interface RecordingSession {
-  process: ChildProcess | null;
+  process: ChildProcess;
   startTime: number;
   windowTitle?: string;
   isActive: boolean;
@@ -30,7 +30,7 @@ class OBSRecordingService {
   public clipMarkers: ClipMarker[] = [];
 
   private constructor() {
-    this.bufferDir = path.join(os.homedir(), "twitch-recorder-buffer");
+    this.bufferDir = path.join(os.tmpdir(), "twitch-recorder-buffer");
     const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
     this.obsDir = path.join(
       isDev ? path.resolve(__dirname, "..", "..") : process.resourcesPath,
@@ -486,7 +486,9 @@ FirstRun=false
     const globalIniPath = path.join(this.obsConfigDir, "global.ini");
     fs.writeFileSync(globalIniPath, globalIni);
 
-    logger.log("✅ OBS configuration updated with working settings");
+    logger.log(
+      "✅ OBS configuration updated with performance-optimized settings"
+    );
   }
 
   private getOBSExecutable(): string {
@@ -500,44 +502,46 @@ FirstRun=false
     return path.join(this.obsDir, "bin", "obs");
   }
 
+  /**
+   * Starts a new OBS recording session.
+   *
+   * @param windowTitle - Optional title of the window to record.
+   */
   public async startRecording(
     windowTitle?: string
-  ): Promise<{ success: boolean; error?: string }> {
+  ): Promise<Success<ChildProcess> | Failure<string>> {
     if (this.currentSession?.isActive) {
       logger.warn("⚠️ Attempted to start recording while already active");
-      return { success: false, error: "Recording already in progress" };
+      return { status: "error", error: "Recording already in progress" };
     }
 
     this.initializeOBSConfig(windowTitle);
 
-    // Wait a moment for OBS to initialize
-    await new Promise((resolve) => setTimeout(resolve, 2000));
+    await new Promise((resolve) => setTimeout(resolve, 1000));
 
     const obsPath = this.getOBSExecutable();
     if (!fs.existsSync(obsPath)) {
       logger.error("❌ OBS executable not found at", obsPath);
-      return { success: false, error: "OBS executable not found." };
+      return { status: "error", error: "OBS executable not found." };
     }
 
     logger.log("▶️ Launching OBS for recording...");
     const startTime = Date.now();
 
     try {
-      // const args = [
-      //   "--portable",
-      //   "--profile",
-      //   "TwitchRecorder",
-      //   "--collection",
-      //   "TwitchRecorder",
-      //   "--disable-updater",
-      //   "--disable-shutdown-check",
-      //   "--unfiltered_log",
-      //   "--verbose",
-      //   "--minimize-to-tray",
-      //   "--startrecording",
-      // ];
-
-      const args = ["--portable"];
+      const args = [
+        "--portable",
+        "--profile",
+        "TwitchRecorder",
+        "--collection",
+        "TwitchRecorder",
+        "--disable-updater",
+        "--disable-shutdown-check",
+        "--unfiltered_log",
+        "--verbose",
+        "--minimize-to-tray",
+        "--startrecording",
+      ];
 
       const obsProcess = spawn(obsPath, args, {
         stdio: ["ignore", "pipe", "pipe"],
@@ -545,7 +549,6 @@ FirstRun=false
         env: {
           ...process.env,
           OBS_USE_NEW_MPEGTS_OUTPUT: "false",
-          // Disable auto config
           OBS_DISABLE_AUTOUPDATE: "1",
           OBS_DISABLE_AUTO_CONFIG: "1",
         },
@@ -570,7 +573,7 @@ FirstRun=false
 
       obsProcess.stderr.on("data", (data: Buffer) => {
         const output = data.toString();
-        if (output.includes("error") || output.includes("Error")) {
+        if (output.toLowerCase().includes("error")) {
           logger.error("❌ OBS error:", output.trim());
         } else {
           logger.log("📊 OBS stderr:", output.trim());
@@ -592,11 +595,11 @@ FirstRun=false
       });
 
       logger.log("✅ OBS recording started successfully");
-      return { success: true };
+      return { status: "success", data: obsProcess };
     } catch (error) {
       logger.error("❌ Failed to start OBS recording:", error);
       return {
-        success: false,
+        status: "error",
         error: error instanceof Error ? error.message : "Unknown error",
       };
     }
@@ -646,73 +649,184 @@ FirstRun=false
       return { success: false, error: "FFmpeg binary not found" };
     }
 
+    let tempInputFile: string | null = null;
+
     try {
       const recordingFile = this.getCurrentRecordingFile();
-
-      logger.log("------------------", recordingFile);
 
       if (!recordingFile) {
         return { success: false, error: "Recording file not found" };
       }
 
-      logger.log("------------------ after", recordingFile);
+      if (!fs.existsSync(recordingFile)) {
+        return { success: false, error: "Recording file does not exist" };
+      }
 
+      logger.log("📁 Source recording file:", recordingFile);
+
+      const bufferMs = 5000;
+      const neededDurationMs = endTimeMs + bufferMs;
+
+      tempInputFile = path.join(this.bufferDir, `temp_input_${Date.now()}.mkv`);
+      const copyDurationSec = (neededDurationMs / 1000).toFixed(3);
+
+      logger.log("📋 Creating temporary input file:", {
+        tempInputFile,
+        copyDurationSec,
+      });
+
+      const copyArgs = [
+        "-i",
+        recordingFile,
+        "-t",
+        copyDurationSec, // Copy only the duration we need + buffer
+        "-c",
+        "copy", // Stream copy (fast)
+        "-avoid_negative_ts",
+        "make_zero",
+        "-y",
+        tempInputFile,
+      ];
+
+      const copySuccess = await new Promise<boolean>((resolve) => {
+        const copyProcess = spawn(ffmpegPath, copyArgs, {
+          stdio: ["ignore", "pipe", "pipe"],
+        });
+
+        let copyStderr = "";
+
+        copyProcess.stderr.on("data", (data: Buffer) => {
+          const output = data.toString();
+          copyStderr += output;
+          if (output.includes("time=")) {
+            logger.log("📊 Copy progress:", output.trim());
+          }
+        });
+
+        copyProcess.on("close", (code: number) => {
+          logger.log("📋 Copy process completed:", {
+            exitCode: code,
+            tempFileExists: fs.existsSync(tempInputFile!),
+            tempFileSize: fs.existsSync(tempInputFile!)
+              ? fs.statSync(tempInputFile!).size
+              : 0,
+          });
+
+          if (
+            code === 0 &&
+            fs.existsSync(tempInputFile!) &&
+            fs.statSync(tempInputFile!).size > 0
+          ) {
+            resolve(true);
+          } else {
+            logger.error("❌ Copy failed:", copyStderr.slice(-500));
+            resolve(false);
+          }
+        });
+
+        copyProcess.on("error", (error: Error) => {
+          logger.error("❌ Copy process error:", error);
+          resolve(false);
+        });
+      });
+
+      if (!copySuccess) {
+        return {
+          success: false,
+          error: "Failed to create temporary copy of recording",
+        };
+      }
+
+      // Extract the clip from the temporary file
       const startSec = (startTimeMs / 1000).toFixed(3);
-      const requestedDurationSec = ((endTimeMs - startTimeMs) / 1000).toFixed(
-        3
-      );
+      const durationSec = ((endTimeMs - startTimeMs) / 1000).toFixed(3);
 
-      const args = [
+      logger.log("✂️ Extracting from temporary file:", {
+        startSec,
+        durationSec,
+        tempInputFile,
+        outputPath,
+      });
+
+      const extractArgs = [
         "-ss",
         startSec, // Seek to start position
         "-i",
-        recordingFile, // Input file
+        tempInputFile, // Use temporary file as input
         "-t",
-        requestedDurationSec, // Use requested duration, FFmpeg will stop when data runs out
+        durationSec, // Duration to extract
         "-c:v",
-        "copy", // Copy video stream without re-encoding
+        "copy", // Copy video stream
         "-c:a",
-        "copy", // Copy audio stream without re-encoding
+        "copy", // Copy audio stream
         "-avoid_negative_ts",
-        "make_zero", // Handle negative timestamps
+        "make_zero",
         "-fflags",
-        "+genpts", // Generate presentation timestamps
+        "+genpts",
         "-map",
-        "0:v:0", // Explicitly map first video stream
+        "0:v:0",
         "-map",
-        "0:a:0", // Explicitly map first audio stream
-        "-async",
-        "1", // Audio sync method
-        "-fps_mode",
-        "passthrough",
-        "-copyts", // Copy input timestamps
-        "-start_at_zero", // Start output at zero timestamp
+        "0:a:0",
         "-y",
         outputPath,
       ];
 
       return new Promise((resolve) => {
-        const ffmpegProcess = spawn(ffmpegPath, args);
+        const extractProcess = spawn(ffmpegPath, extractArgs, {
+          stdio: ["ignore", "pipe", "pipe"],
+        });
 
-        ffmpegProcess.stderr.on("data", (data: Buffer) => {
+        let extractStderr = "";
+
+        extractProcess.stderr.on("data", (data: Buffer) => {
           const output = data.toString();
+          extractStderr += output;
           if (output.includes("time=")) {
             logger.log("📊 Extraction progress:", output.trim());
           }
         });
 
-        ffmpegProcess.on("close", (code: number) => {
-          if (code === 0) {
-            resolve({ success: true, outputPath });
+        extractProcess.on("close", (code: number) => {
+          logger.log("✂️ Extraction completed:", {
+            exitCode: code,
+            outputExists: fs.existsSync(outputPath),
+            outputSize: fs.existsSync(outputPath)
+              ? fs.statSync(outputPath).size
+              : 0,
+          });
+
+          // Clean up temp file
+          if (tempInputFile && fs.existsSync(tempInputFile)) {
+            try {
+              fs.unlinkSync(tempInputFile);
+              logger.log("🧹 Temporary input file cleaned up");
+            } catch (cleanupError) {
+              logger.warn("⚠️ Failed to clean up temp file:", cleanupError);
+            }
+          }
+
+          if (code === 0 && fs.existsSync(outputPath)) {
+            const stats = fs.statSync(outputPath);
+            if (stats.size > 0) {
+              resolve({ success: true, outputPath });
+            } else {
+              resolve({
+                success: false,
+                error: "Output file is empty",
+              });
+            }
           } else {
             resolve({
               success: false,
-              error: `FFmpeg exited with code ${code}`,
+              error: `FFmpeg extraction failed with code ${code}. stderr: ${extractStderr.slice(
+                -500
+              )}`,
             });
           }
         });
 
-        ffmpegProcess.on("error", (error: Error) => {
+        extractProcess.on("error", (error: Error) => {
+          logger.error("❌ Extraction process error:", error);
           resolve({ success: false, error: error.message });
         });
       });
@@ -722,6 +836,7 @@ FirstRun=false
         success: false,
         error: error instanceof Error ? error.message : "Unknown error",
       };
+    } finally {
     }
   }
 
@@ -779,7 +894,6 @@ FirstRun=false
   }
 
   public getBufferDuration(): number {
-    logger.log({ currentSession: this.currentSession });
     if (!this.currentSession?.isActive) return 0;
     return Date.now() - this.currentSession.startTime;
   }
@@ -825,10 +939,38 @@ FirstRun=false
     }
   }
 
-  public cleanup(): void {
-    if (this.currentSession?.isActive) {
-      this.currentSession.process?.kill("SIGKILL");
+  public async cleanup(): Promise<void> {
+    const session = this.currentSession;
+
+    if (session?.isActive && session.process) {
+      logger.log("🧹 Initiating OBS cleanup...");
+
+      const process = session.process;
+
+      try {
+        process.kill("SIGTERM");
+
+        await new Promise<void>((resolve) => {
+          const timeout = setTimeout(() => {
+            if (!process.killed) {
+              logger.warn("⚠️ OBS did not exit in time; forcing kill");
+              process.kill("SIGKILL");
+            }
+            resolve();
+          }, 2000);
+
+          process.on("exit", () => {
+            clearTimeout(timeout);
+            resolve();
+          });
+        });
+
+        logger.log("✅ OBS recording session cleaned up");
+      } catch (error) {
+        logger.error("❌ Error during OBS cleanup:", error);
+      }
     }
+
     this.currentSession = null;
   }
 }

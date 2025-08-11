@@ -97,7 +97,6 @@ export interface ClipExportData {
 export interface StreamSession {
   startTime: number;
   sourceId: string;
-  bufferFile: string;
 }
 
 export interface RecordingStartedInfo {
@@ -172,3 +171,13 @@ export interface ClipResponse {
   blob?: Uint8Array;
   error?: string;
 }
+
+export type Success<T> = {
+  status: "success";
+  data: T;
+};
+
+export type Failure<E> = {
+  status: "error";
+  error: E;
+};

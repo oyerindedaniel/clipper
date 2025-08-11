@@ -37,7 +37,7 @@ export const DraggableTextOverlay = ({
           textDecoration: overlay.underline ? "underline" : "none",
           textAlign: overlay.alignment,
           maxWidth: overlay.maxWidth,
-          padding: "8px 12px",
+          padding: "6px 8px",
           borderRadius: "4px",
           zIndex: isSelected ? 10 : 1,
           pointerEvents: "auto",

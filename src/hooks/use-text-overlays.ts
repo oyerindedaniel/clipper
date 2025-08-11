@@ -43,6 +43,38 @@ export const useTextOverlays = (
     finalTop: 0,
   });
 
+  const vGuideRef = useRef<HTMLDivElement | null>(null);
+  const hGuideRef = useRef<HTMLDivElement | null>(null);
+
+  function ensureGuides(container: HTMLDivElement) {
+    if (!vGuideRef.current) {
+      const v = document.createElement("div");
+      v.style.position = "absolute";
+      v.style.top = "0";
+      v.style.bottom = "0";
+      v.style.width = "1px";
+      v.style.background = "var(--color-primary, rgba(59,130,246,0.75))";
+      v.style.pointerEvents = "none";
+      v.style.zIndex = "14";
+      v.style.display = "none";
+      container.appendChild(v);
+      vGuideRef.current = v;
+    }
+    if (!hGuideRef.current) {
+      const h = document.createElement("div");
+      h.style.position = "absolute";
+      h.style.left = "0";
+      h.style.right = "0";
+      h.style.height = "1px";
+      h.style.background = "var(--color-primary, rgba(59,130,246,0.75))";
+      h.style.pointerEvents = "none";
+      h.style.zIndex = "14";
+      h.style.display = "none";
+      container.appendChild(h);
+      hGuideRef.current = h;
+    }
+  }
+
   const addTextOverlay = useCallback(
     (currentTime: number = 0, duration?: number) => {
       const video = videoRef.current;
@@ -127,16 +159,39 @@ export const useTextOverlays = (
 
     if (!container) return;
 
-    const rect = target.getBoundingClientRect();
-    const containerRect = container.getBoundingClientRect();
+    ensureGuides(container);
+
+    const style = window.getComputedStyle(target);
+    const transformMatrix = style.transform;
+    let currentX = 0;
+    let currentY = 0;
+
+    if (transformMatrix && transformMatrix !== "none") {
+      const matrixValues = transformMatrix.match(
+        /matrix3d\((.+)\)|matrix\((.+)\)/
+      );
+      if (matrixValues) {
+        const values = matrixValues[1] || matrixValues[2];
+        const parsedValues = values.split(",").map(parseFloat);
+        if (matrixValues[1]) {
+          // matrix3d
+          currentX = parsedValues[12];
+          currentY = parsedValues[13];
+        } else {
+          // matrix
+          currentX = parsedValues[4];
+          currentY = parsedValues[5];
+        }
+      }
+    }
 
     dragRef.current = {
       isDragging: true,
       startX: e.clientX,
       startY: e.clientY,
       element: target,
-      offsetX: rect.left - containerRect.left,
-      offsetY: rect.top - containerRect.top,
+      offsetX: currentX,
+      offsetY: currentY,
       overlayId,
       rafId: null,
       finalLeft: 0,
@@ -177,6 +232,29 @@ export const useTextOverlays = (
       drag.finalLeft = newLeft;
       drag.finalTop = newTop;
 
+      const containerCenterX = containerRect.width / 2;
+      const containerCenterY = containerRect.height / 2;
+      const elementCenterX = newLeft + elementWidth / 2;
+      const elementCenterY = newTop + elementHeight / 2;
+      const threshold = 6; // px tolerance
+
+      if (vGuideRef.current) {
+        if (Math.abs(elementCenterX - containerCenterX) <= threshold) {
+          vGuideRef.current.style.left = `${containerCenterX}px`;
+          vGuideRef.current.style.display = "block";
+        } else {
+          vGuideRef.current.style.display = "none";
+        }
+      }
+      if (hGuideRef.current) {
+        if (Math.abs(elementCenterY - containerCenterY) <= threshold) {
+          hGuideRef.current.style.top = `${containerCenterY}px`;
+          hGuideRef.current.style.display = "block";
+        } else {
+          hGuideRef.current.style.display = "none";
+        }
+      }
+
       if (drag.rafId) {
         cancelAnimationFrame(drag.rafId);
       }
@@ -205,6 +283,9 @@ export const useTextOverlays = (
 
         logger.log("[Normalized Overlay Position]", { x, y });
       }
+
+      if (vGuideRef.current) vGuideRef.current.style.display = "none";
+      if (hGuideRef.current) hGuideRef.current.style.display = "none";
 
       drag.element = null;
       drag.overlayId = null;

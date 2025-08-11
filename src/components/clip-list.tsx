@@ -103,8 +103,7 @@ export default function ClipList({
       toast.info(
         `Dummy delete for clip ${clipToDelete.id.split("_")[1]} triggered.`
       );
-      // In a real scenario, you would call an API or service to delete the clip
-      // and then update the clips state accordingly.
+     
       setClipToDelete(null);
       closeDeleteConfirmModal();
     }

@@ -4,6 +4,7 @@ import React, {
   useCallback,
   useLayoutEffect,
   useState,
+  memo,
 } from "react";
 import { GripVertical } from "lucide-react";
 
@@ -16,7 +17,7 @@ type Dir = "left" | "right";
 
 const HANDLE_OFFSET = 8;
 
-export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
+const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
   const timelineRef = useRef<HTMLDivElement>(null);
   const leftHandleRef = useRef<HTMLDivElement>(null);
   const rightHandleRef = useRef<HTMLDivElement>(null);
@@ -285,3 +286,5 @@ export const Timeline: React.FC<TimelineProps> = ({ duration, onTrim }) => {
     </div>
   );
 };
+
+export default memo(Timeline);

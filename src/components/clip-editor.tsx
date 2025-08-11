@@ -9,6 +9,7 @@ import {
   EyeOff,
   Plus,
   Trash2,
+  Crosshair,
 } from "lucide-react";
 import {
   ClipMarker,
@@ -19,7 +20,6 @@ import {
   ClipMetadata,
   ExportClip,
 } from "@/types/app";
-import { IpcRendererEvent } from "electron";
 import { toast } from "sonner";
 import { normalizeError } from "@/utils/error-utils";
 import recordingService from "@/services/recording-service";
@@ -35,10 +35,12 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { useDisclosure } from "@/hooks/use-disclosure";
 import { DEFAULT_ASPECT_RATIO, DEFAULT_CROP_MODE } from "@/constants/app";
-import { Timeline } from "@/components/timeline";
+import Timeline from "@/components/timeline";
 import { TimelineSkeleton } from "@/components/timeline-skeleton";
 import { ExportNamingDialog } from "@/components/export-naming-dialog";
 import { getTargetVideoDimensions } from "@/utils/app";
+import MediaPlayerContainer from "@/components/media-player-container";
+import { useLatestValue } from "@/hooks/use-latest-value";
 
 interface ClipEditorProps {
   clip: ClipMarker | null;
@@ -93,6 +95,19 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
     startDrag,
   } = useTextOverlays(videoRef);
 
+  const [showTrace, setShowTrace] = useState(false);
+
+  const showTraceRef = useLatestValue(showTrace);
+
+  const toggleTrace = useCallback(() => {
+    setShowTrace((v) => {
+      if (v && traceRef.current) {
+        traceRef.current.style.backgroundColor = "transparent";
+      }
+      return !v;
+    });
+  }, []);
+
   const adjustOverlayBounds = useCallback(() => {
     const video = videoRef.current;
     const container = containerRef.current;
@@ -110,7 +125,9 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
     trace.style.top = `${y}px`;
     trace.style.width = `${width}px`;
     trace.style.height = `${height}px`;
-    trace.style.backgroundColor = "rgba(255, 0, 0, 0.3)";
+    trace.style.backgroundColor = showTraceRef.current
+      ? "rgba(255, 0, 0, 0.15)"
+      : "transparent";
     trace.style.pointerEvents = "none";
     trace.style.zIndex = "15";
   }, []);
@@ -384,9 +401,9 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
     });
   };
 
-  const handleSettingsApplied = (aspectRatio: string, cropMode: string) => {
+  const handleSettingsApplied = (aspectRatio: string, cropMode: CropMode) => {
     selectedConvertAspectRatio.current = aspectRatio;
-    selectedCropMode.current = cropMode as CropMode;
+    selectedCropMode.current = cropMode;
     closeAspectRatioModal();
     // Reload the video with new aspect ratio and crop mode settings
     loadClipVideo();
@@ -406,7 +423,7 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
           <div className="flex items-center space-x-2">
             <Button
               className="flex items-center space-x-2 px-3 py-1.5 text-xs"
-              variant="ghost"
+              variant="outline"
               onClick={() => openAspectRatioModal()}
             >
               <Settings size={16} />
@@ -417,10 +434,17 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
               onClick={() => openExportNamingModal()}
               disabled={!clip || isExporting}
               className="flex items-center space-x-2 px-3 py-1.5 text-xs"
-              variant="default"
             >
               <Download size={16} />
               <span>{isExporting ? "Exporting..." : "Export"}</span>
+            </Button>
+            <Button
+              className="flex items-center space-x-2 px-3 py-1.5 text-xs"
+              variant="outline"
+              onClick={toggleTrace}
+            >
+              <Crosshair size={16} />
+              <span>{showTrace ? "Hide Trace" : "Show Trace"}</span>
             </Button>
           </div>
         </div>
@@ -431,32 +455,7 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
               ref={containerRef}
               className="relative w-full aspect-video flex items-center justify-center overflow-hidden rounded-lg bg-surface-secondary shadow-md border border-gray-700/50"
             >
-              <MediaPlayer.Root>
-                <MediaPlayer.Video
-                  ref={videoRef}
-                  playsInline
-                  className="w-full aspect-video"
-                  poster="/thumbnails/video-thumb.png"
-                />
-                <MediaPlayer.Loading />
-                <MediaPlayer.Error />
-                <MediaPlayer.VolumeIndicator />
-                <MediaPlayer.Controls>
-                  <MediaPlayer.ControlsOverlay />
-                  <MediaPlayer.Play />
-                  <MediaPlayer.SeekBackward />
-                  <MediaPlayer.SeekForward />
-                  <MediaPlayer.Volume />
-                  <MediaPlayer.Seek />
-                  <MediaPlayer.Time />
-                  <MediaPlayer.PlaybackSpeed />
-                  <MediaPlayer.Loop />
-                  <MediaPlayer.Captions />
-                  <MediaPlayer.PiP />
-                  <MediaPlayer.Fullscreen />
-                  <MediaPlayer.Download />
-                </MediaPlayer.Controls>
-              </MediaPlayer.Root>
+              <MediaPlayerContainer ref={videoRef} />
 
               <div ref={traceRef} className="absolute" />
 

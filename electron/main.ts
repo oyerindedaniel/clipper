@@ -8,7 +8,7 @@ import {
 } from "electron";
 import ffmpegStatic from "ffmpeg-static";
 import ffprobeStatic from "ffprobe-static";
-import { spawn, ChildProcessWithoutNullStreams } from "child_process";
+import { spawn, ChildProcess } from "child_process";
 import pQueue from "p-queue";
 import * as path from "path";
 import * as fs from "fs";
@@ -41,13 +41,12 @@ const recordingService = OBSRecordingService.getInstance();
 let mainWindow: BrowserWindow | null = null;
 let twitchWindow: BrowserWindow | null = null;
 let isRecording = false;
-let recordingProcess: ChildProcessWithoutNullStreams | null = null;
 let clipMarkers: ClipMarker[] = [];
 let currentStream: StreamSession | null = null;
 
 let postMarkDurationMs = DEFAULT_CLIP_POST_MARK_MS;
 
-const bufferDir = path.join(os.homedir(), "twitch-recorder-buffer");
+const bufferDir = path.join(os.tmpdir(), "twitch-recorder-buffer");
 const captureManager = DesktopCaptureManager.getInstance();
 
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
@@ -130,7 +129,7 @@ function createTwitchWindow(channelName: string): void {
 }
 
 /**
- * Start recording by requesting renderer to handle it.
+ * Start recording
  */
 async function startRecording(sourceId?: string): Promise<void> {
   if (isRecording) return;
@@ -147,7 +146,7 @@ async function startRecording(sourceId?: string): Promise<void> {
 
     const result = await recordingService.startRecording(source.name);
 
-    if (!result.success) {
+    if (result.status === "error") {
       throw new Error(result.error || "Failed to start recording");
     }
 
@@ -155,7 +154,6 @@ async function startRecording(sourceId?: string): Promise<void> {
     currentStream = {
       startTime: Date.now(),
       sourceId: source.id,
-      bufferFile: path.join(bufferDir, `buffer_${Date.now()}.mkv`),
     };
 
     mainWindow?.webContents.send("recording-started", {
@@ -172,7 +170,7 @@ async function startRecording(sourceId?: string): Promise<void> {
 }
 
 /**
- * Stop recording by requesting renderer to handle it.
+ * Stop recording
  */
 async function stopRecording(): Promise<void> {
   if (!isRecording) return;
@@ -185,7 +183,8 @@ async function stopRecording(): Promise<void> {
 
     isRecording = false;
     currentStream = null;
-    recordingProcess = null;
+
+    recordingService.cleanup();
 
     mainWindow?.webContents.send("recording-stopped");
   } catch (err) {
@@ -197,7 +196,7 @@ async function stopRecording(): Promise<void> {
 }
 
 /**
- * Mark a clip by requesting renderer to handle it.
+ * Mark a clip
  */
 async function markClip(): Promise<void> {
   if (!isRecording || !currentStream) return;
@@ -231,7 +230,9 @@ async function clipBlob(
   options: ClipOptions = {}
 ): Promise<ClipResponse> {
   try {
-    const tempOutputPath = path.join(bufferDir, `temp_clip_${Date.now()}.webm`);
+    const tempOutputPath = path.join(bufferDir, `temp_clip_${Date.now()}.mkv`);
+
+    // Use the recording service to extract the clip
     const result = await recordingService.extractClip(
       startTimeMs,
       endTimeMs,
@@ -239,20 +240,47 @@ async function clipBlob(
     );
 
     if (!result.success) {
+      logger.error("❌ Failed to extract clip:", result.error);
       return {
         success: false,
         error: result.error || "Failed to extract clip",
       };
     }
 
+    if (!fs.existsSync(tempOutputPath)) {
+      logger.error("❌ Output file not created:", tempOutputPath);
+      return {
+        success: false,
+        error: "Output file was not created by FFmpeg",
+      };
+    }
+
+    const fileStats = fs.statSync(tempOutputPath);
+    if (fileStats.size === 0) {
+      logger.error("❌ Output file is empty:", tempOutputPath);
+      fs.unlinkSync(tempOutputPath);
+      return {
+        success: false,
+        error: "Output file is empty",
+      };
+    }
+
+    logger.log("✅ Clip extracted successfully", {
+      outputPath: tempOutputPath,
+      fileSize: fileStats.size,
+      sizeInMB: (fileStats.size / 1024 / 1024).toFixed(2),
+    });
+
     let clipBuffer: Buffer;
 
     try {
       clipBuffer = fs.readFileSync(tempOutputPath);
     } catch (readError) {
+      logger.error("❌ Failed to read extracted clip file:", readError);
       return { success: false, error: "Failed to read extracted clip file" };
     }
 
+    // Handle aspect ratio conversion if requested
     if (
       options.convertAspectRatio &&
       options.convertAspectRatio !== "original"
@@ -271,19 +299,29 @@ async function clipBlob(
         );
 
         clipBuffer = Buffer.from(converted);
-      } catch {
+        logger.log("✅ Aspect ratio converted successfully");
+      } catch (conversionError) {
+        logger.warn(
+          "⚠️ Aspect ratio conversion failed, using original:",
+          conversionError
+        );
         // Keep original buffer if conversion fails
       }
     }
 
     const clipBlob = new Uint8Array(clipBuffer);
 
+    // Clean up temp file
     try {
       fs.unlinkSync(tempOutputPath);
-    } catch {}
+      logger.log("🧹 Temp file cleaned up:", tempOutputPath);
+    } catch (cleanupError) {
+      logger.warn("⚠️ Failed to clean up temp file:", cleanupError);
+    }
 
     return { success: true, blob: clipBlob };
   } catch (error) {
+    logger.error("❌ clipBlob function failed:", error);
     return {
       success: false,
       error: error instanceof Error ? error.message : "Unknown error",
@@ -378,8 +416,8 @@ function renderTextOverlay(
   logger.log(`📐 Video dimensions: ${renderWidth} x ${renderHeight}`);
 
   // CSS padding from DraggableTextOverlay: "8px 12px" = top/bottom: 8px, left/right: 12px
-  const basePaddingX = 12;
-  const basePaddingY = 8;
+  const basePaddingX = 8;
+  const basePaddingY = 6;
 
   // Scale padding with scale factor
   const scaledPaddingX = Math.round(basePaddingX * scaleFactor);
@@ -665,7 +703,7 @@ async function processClipForExport(
   try {
     if (!blob || !metadata) throw new Error("Missing blob or metadata");
 
-    const tempInput = path.join(bufferDir, `temp_clip_${Date.now()}.webm`);
+    const tempInput = path.join(bufferDir, `temp_clip_${Date.now()}.mkv`);
     fs.writeFileSync(tempInput, Buffer.from(blob));
 
     logger.log("📁 Temporary input file created", {
@@ -793,7 +831,6 @@ async function processClipForExport(
 
     return new Promise((resolve, reject) => {
       const ff = spawn(ffmpegPath, args);
-      recordingProcess = ff;
 
       ff.stderr.on("data", (chunk) => {
         const chunkStr = chunk.toString();
@@ -809,8 +846,6 @@ async function processClipForExport(
       });
 
       ff.on("close", (code) => {
-        recordingProcess = null;
-
         logger.log("🏁 FFmpeg process completed", {
           exitCode: code,
           clipId: data.id,
@@ -854,7 +889,6 @@ async function processClipForExport(
       });
 
       ff.on("error", (err) => {
-        recordingProcess = null;
         logger.error("💥 FFmpeg process error", {
           error: err.message,
           clipId: data.id,
@@ -906,7 +940,7 @@ async function processClipForExportWithCanvas(
       targetResolution,
     });
 
-    const tempInput = path.join(bufferDir, `temp_clip_${Date.now()}.webm`);
+    const tempInput = path.join(bufferDir, `temp_clip_${Date.now()}.mkv`);
     fs.writeFileSync(tempInput, Buffer.from(blob));
 
     const outputFileName = `${data.outputName}.${exportSettings.format}`;
@@ -1008,7 +1042,6 @@ async function processClipForExportWithCanvas(
 
       return new Promise((resolve, reject) => {
         const ff = spawn(ffmpegPath, args);
-        recordingProcess = ff;
 
         ff.stderr.on("data", (chunk) => {
           const chunkStr = chunk.toString();
@@ -1016,8 +1049,6 @@ async function processClipForExportWithCanvas(
         });
 
         ff.on("close", (code) => {
-          recordingProcess = null;
-
           // Cleanup
           try {
             fs.unlinkSync(tempInput);
@@ -1086,8 +1117,6 @@ async function processClipForExportWithCanvas(
         });
 
         ff.on("close", (code) => {
-          recordingProcess = null;
-
           try {
             fs.unlinkSync(tempInput);
           } catch (e) {}
@@ -1339,8 +1368,8 @@ export async function remuxClip(
   }
 ): Promise<ArrayBuffer> {
   const sessionId = Date.now();
-  const tempInput = path.join(bufferDir, `temp_remux_${sessionId}.webm`);
-  const tempOutput = path.join(bufferDir, `temp_remux_out_${sessionId}.webm`);
+  const tempInput = path.join(bufferDir, `temp_remux_${sessionId}.mkv`);
+  const tempOutput = path.join(bufferDir, `temp_remux_out_${sessionId}.mkv`);
 
   logger.log("🔧 Starting remux operation", {
     clipStartMs,
@@ -1554,8 +1583,8 @@ async function convertVideoAspectRatio(
     return inputBuffer;
   }
 
-  const tempInput = path.join(bufferDir, `temp_aspect_${Date.now()}.webm`);
-  const tempOutput = path.join(bufferDir, `temp_aspect_out_${Date.now()}.webm`);
+  const tempInput = path.join(bufferDir, `temp_aspect_${Date.now()}.mkv`);
+  const tempOutput = path.join(bufferDir, `temp_aspect_out_${Date.now()}.mkv`);
 
   try {
     const buffer = Buffer.from(inputBuffer);
@@ -1711,8 +1740,16 @@ function setupIpc(): void {
       startTimeMs: number,
       endTimeMs: number,
       options: ClipOptions = {}
-    ) => {
-      await clipBlob(startTimeMs, endTimeMs, options);
+    ): Promise<ClipResponse> => {
+      try {
+        const result = await clipBlob(startTimeMs, endTimeMs, options);
+        return result;
+      } catch (error) {
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
     }
   );
 

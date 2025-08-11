@@ -19,11 +19,12 @@ import {
 import { Badge } from "@/components/ui/badge";
 import React from "react";
 import { DEFAULT_ASPECT_RATIO, DEFAULT_CROP_MODE } from "@/constants/app";
+import { CropMode } from "@/types/app";
 
 interface AspectRatioSelectorProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  onSettingsApplied: (convertAspectRatio: string, cropMode: string) => void;
+  onSettingsApplied: (convertAspectRatio: string, cropMode: CropMode) => void;
 }
 
 const AspectRatioSelector = ({
@@ -135,7 +136,7 @@ const AspectRatioSelector = ({
         <DialogFooter>
           <Button
             onClick={() => {
-              onSettingsApplied(convertAspectRatio, cropMode);
+              onSettingsApplied(convertAspectRatio, cropMode as CropMode);
               onOpenChange(false);
             }}
             className="w-full"

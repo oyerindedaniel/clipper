@@ -31,8 +31,8 @@ interface TextOverlayItemProps {
 }
 
 const fontSizes = Array.from(
-  { length: (72 - 16) / 4 + 1 },
-  (_, i) => 16 + i * 4
+  { length: Math.floor((72 - 8) / 4) + 1 },
+  (_, i) => 8 + i * 4
 );
 const opacities = Array.from({ length: 10 }, (_, i) => (i + 1) * 0.1);
 
@@ -130,9 +130,9 @@ const TextOverlayItem = ({
               </label>
               <Select
                 value={String(overlay.fontSize)}
-                onValueChange={(value) =>
-                  updateTextOverlay(overlay.id, { fontSize: parseInt(value) })
-                }
+                onValueChange={(value) => {
+                  // updateTextOverlay(overlay.id, { fontSize: parseInt(value) })
+                }}
               >
                 <SelectTrigger className="w-full px-2 py-1 h-auto text-xs">
                   <SelectValue placeholder="Select font size" />
