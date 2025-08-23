@@ -56,6 +56,10 @@ export interface ElectronAPI {
     callback: (_: IpcRendererEvent, progressInfo: ExportProgressInfo) => void
   ) => void;
   removeAllListeners: (channel: string) => void;
+
+  uploadClipToAWS: (
+    clipMarker: ClipMarker
+  ) => Promise<{ success: boolean; error?: string }>;
 }
 
 declare global {

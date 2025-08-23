@@ -35,8 +35,13 @@ import {
   EXPORT_BITRATE_MAP,
 } from "../src/constants/app";
 import OBSRecordingService from "./services/obs-recording-service";
+import AWSUploadService from "./services/aws-upload-service";
+import { getAWSConfig } from "./config/aws-config";
 
 const recordingService = OBSRecordingService.getInstance();
+const awsUploadService = AWSUploadService.getInstance();
+
+const awsConfig = getAWSConfig();
 
 let mainWindow: BrowserWindow | null = null;
 let twitchWindow: BrowserWindow | null = null;
@@ -121,6 +126,8 @@ function createTwitchWindow(channelName: string): void {
       "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 " +
       "(KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
   });
+
+  awsUploadService.setStreamerName(channelName);
 
   twitchWindow.on("closed", () => {
     twitchWindow = null;
@@ -219,6 +226,19 @@ async function markClip(): Promise<void> {
     clipMarkers.push(clipMarker);
     recordingService.clipMarkers = clipMarkers;
     mainWindow?.webContents.send("clip-marked", clipMarker);
+
+    if (awsUploadService.isReady()) {
+      try {
+        await awsUploadService.queueClipForUpload(clipMarker);
+        logger.log("📤 Clip automatically queued for AWS upload", {
+          clipId: clipMarker.id,
+        });
+      } catch (uploadError) {
+        logger.error("❌ Failed to queue clip for AWS upload:", uploadError);
+      }
+    } else {
+      logger.warn("⚠️ AWS upload service not ready, skipping automatic upload");
+    }
   } catch (error) {
     logger.error("Failed to mark clip:", error);
   }
@@ -1885,7 +1905,10 @@ function setupIpc(): void {
       const url = twitchWindow.webContents.getURL();
       const match = url.match(/twitch\.tv\/([^/\?]+)/);
       if (match && match[1]) {
-        return match[1];
+        const streamerName = match[1];
+
+        awsUploadService.setStreamerName(streamerName);
+        return streamerName;
       }
     }
     return null;
@@ -1908,12 +1931,38 @@ function setupIpc(): void {
       );
     }
   );
+
+  ipcMain.handle(
+    "upload-clip-to-aws",
+    async (_: IpcMainInvokeEvent, clipMarker: ClipMarker) => {
+      try {
+        await awsUploadService.queueClipForUpload(clipMarker);
+        return { success: true };
+      } catch (error) {
+        logger.error("Failed to queue clip for AWS upload:", error);
+        return {
+          success: false,
+          error: error instanceof Error ? error.message : "Unknown error",
+        };
+      }
+    }
+  );
 }
 
 // App lifecycle
 app.whenReady().then(() => {
   createMainWindow();
   setupIpc();
+
+  try {
+    awsUploadService.initialize(awsConfig);
+    logger.log("🚀 AWS Upload Service initialized on app startup");
+  } catch (error) {
+    logger.warn(
+      "⚠️ Failed to initialize AWS Upload Service on startup:",
+      error
+    );
+  }
 
   globalShortcut.register("CommandOrControl+Shift+M", markClip);
   globalShortcut.register("CommandOrControl+Shift+R", () =>
@@ -1934,6 +1983,7 @@ app
     globalShortcut.unregisterAll();
     if (isRecording) stopRecording();
     recordingService.cleanup();
+    awsUploadService.cleanup();
   })
   .on("certificate-error", (event, _, url, __, ___, callback) => {
     if (url.includes("twitch.tv")) {

@@ -81,6 +81,11 @@ contextBridge.exposeInMainWorld("electronAPI", {
   removeAllListeners: (channel: string): void => {
     ipcRenderer.removeAllListeners(channel);
   },
+
+  uploadClipToAWS: (
+    clipMarker: ClipMarker
+  ): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("upload-clip-to-aws", clipMarker),
 });
 
 contextBridge.exposeInMainWorld("screenCapture", {
