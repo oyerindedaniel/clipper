@@ -30,7 +30,7 @@ class OBSRecordingService {
   public clipMarkers: ClipMarker[] = [];
 
   private constructor() {
-    this.bufferDir = path.join(os.tmpdir(), "twitch-recorder-buffer");
+    this.bufferDir = path.join(os.homedir(), "twitch-recorder-buffer");
     const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
     this.obsDir = path.join(
       isDev ? path.resolve(__dirname, "..", "..") : process.resourcesPath,
@@ -75,7 +75,7 @@ class OBSRecordingService {
 Name=TwitchRecorder
 
 [Output]
-Mode=Simple
+Mode=Advanced
 FilenameFormatting=%CCYY-%MM-%DD %hh-%mm-%ss
 DelayEnable=false
 DelaySec=20
@@ -111,7 +111,7 @@ StreamAudioEncoder=aac
 RecAudioEncoder=aac
 RecTracks=1
 StreamEncoder=x264
-RecEncoder=x264
+RecEncoder=qsv
 
 [AdvOut]
 ApplyServiceSettings=true
@@ -124,12 +124,11 @@ RecFilePath=${this.bufferDir.replace(/\\/g, "/")}
 RecFormat2=mkv
 RecUseRescale=false
 RecTracks=1
-RecEncoder=none
+RecEncoder=obs_qsv11_v2
 FLVTrack=1
 StreamMultiTrackAudioMixes=1
 FFOutputToFile=true
 FFFilePath=${this.bufferDir.replace(/\\/g, "/")}
-FFExtension=mp4
 FFVBitrate=2500
 FFVGOPSize=250
 FFUseRescale=false
@@ -149,12 +148,19 @@ RecRBTime=20
 RecRBSize=512
 AudioEncoder=ffmpeg_aac
 RecAudioEncoder=ffmpeg_aac
+RecSplitFileType=Time
+FFFormat=
+FFFormatMimeType=
+FFVEncoderId=0
+FFVEncoder=
+FFAEncoderId=0
+FFAEncoder=
 
 [Video]
 BaseCX=1920
 BaseCY=1080
-OutputCX=1920
-OutputCY=1080
+OutputCX=1280
+OutputCY=720
 FPSType=0
 FPSCommon=30
 FPSInt=30
@@ -176,10 +182,19 @@ MeterDecayRate=23.53
 PeakMeterType=0
 
 [Panels]
-CookieId=B589D39DEF8809C0
+CookieId=6B63D308EA745A8D
+`;
+
+    const recordingConfig = `
+{"bitrate":3000,"keyint_sec":2}
 `;
 
     fs.writeFileSync(path.join(profileDir, "basic.ini"), basicConfig);
+
+    fs.writeFileSync(
+      path.join(profileDir, "recordEncoder.json"),
+      recordingConfig
+    );
 
     // === 2. Write Scene Collection File ===
     const scenesDir = path.join(this.obsConfigDir, "basic", "scenes");
@@ -322,8 +337,9 @@ CookieId=B589D39DEF8809C0
           id: "window_capture",
           versioned_id: "window_capture",
           settings: {
-            window: `${windowTitle || ""}:Chrome_WidgetWin_1:electron.exe`,
+            cursor: false,
             capture_audio: true,
+            window: `${windowTitle || ""}:Chrome_WidgetWin_1:electron.exe`,
           },
           mixers: 255,
           sync: 0,
@@ -644,6 +660,7 @@ FirstRun=false
     }
 
     const ffmpegPath = ffmpegStatic;
+    console.log("ffmpegPath", ffmpegPath);
     if (!ffmpegPath) {
       logger.error("❌ FFmpeg binary not found");
       return { success: false, error: "FFmpeg binary not found" };
@@ -689,9 +706,7 @@ FirstRun=false
       ];
 
       const copySuccess = await new Promise<boolean>((resolve) => {
-        const copyProcess = spawn(ffmpegPath, copyArgs, {
-          stdio: ["ignore", "pipe", "pipe"],
-        });
+        const copyProcess = spawn(ffmpegPath, copyArgs);
 
         let copyStderr = "";
 
@@ -729,6 +744,8 @@ FirstRun=false
           resolve(false);
         });
       });
+
+      console.log("copySuccess", copySuccess);
 
       if (!copySuccess) {
         return {
@@ -772,9 +789,7 @@ FirstRun=false
       ];
 
       return new Promise((resolve) => {
-        const extractProcess = spawn(ffmpegPath, extractArgs, {
-          stdio: ["ignore", "pipe", "pipe"],
-        });
+        const extractProcess = spawn(ffmpegPath, extractArgs);
 
         let extractStderr = "";
 

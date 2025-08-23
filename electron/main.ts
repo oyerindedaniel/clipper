@@ -8,7 +8,7 @@ import {
 } from "electron";
 import ffmpegStatic from "ffmpeg-static";
 import ffprobeStatic from "ffprobe-static";
-import { spawn, ChildProcess } from "child_process";
+import { spawn } from "child_process";
 import pQueue from "p-queue";
 import * as path from "path";
 import * as fs from "fs";
@@ -46,7 +46,7 @@ let currentStream: StreamSession | null = null;
 
 let postMarkDurationMs = DEFAULT_CLIP_POST_MARK_MS;
 
-const bufferDir = path.join(os.tmpdir(), "twitch-recorder-buffer");
+const bufferDir = path.join(os.homedir(), "twitch-recorder-buffer");
 const captureManager = DesktopCaptureManager.getInstance();
 
 const isDev = process.env.NODE_ENV === "development" || !app.isPackaged;
