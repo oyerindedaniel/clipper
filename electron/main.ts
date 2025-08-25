@@ -37,6 +37,39 @@ import {
 import OBSRecordingService from "./services/obs-recording-service";
 import AWSUploadService from "./services/aws-upload-service";
 import { getAWSConfig } from "./config/aws-config";
+import { config } from "dotenv";
+import { join } from "path";
+
+// TODO: This is a temporary solution to load the environment variables.
+const loadEnvConfig = () => {
+  const possibleEnvPaths = [
+    join(process.cwd(), ".env"),
+    join(__dirname, ".env"),
+    join(__dirname, "../.env"),
+    join(__dirname, "../../.env"),
+    join(process.resourcesPath, ".env"),
+  ];
+
+  let envLoaded = false;
+
+  for (const envPath of possibleEnvPaths) {
+    if (fs.existsSync(envPath)) {
+      logger.log(`Loading environment from: ${envPath}`);
+      config({ path: envPath });
+      envLoaded = true;
+      break;
+    }
+  }
+
+  if (!envLoaded) {
+    logger.warn("No .env file found in any expected location:");
+    possibleEnvPaths.forEach((path) => logger.warn(`  - ${path}`));
+  }
+
+  logger.log("Checking system environment variables...");
+};
+
+loadEnvConfig();
 
 const recordingService = OBSRecordingService.getInstance();
 const awsUploadService = AWSUploadService.getInstance();
@@ -1019,7 +1052,6 @@ async function processClipForExportWithCanvas(
         targetResolution
       );
 
-      // With overlay filter
       const args = [
         "-ss",
         startSeconds.toString(),

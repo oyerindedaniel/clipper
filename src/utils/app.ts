@@ -1,6 +1,3 @@
-import recordingService from "@/services/recording-service";
-import { WAIT_UNTIL_BUFFER_TIMEOUT_MS } from "@/constants/app";
-
 /**
  * Calculate the visible bounding box of a video element inside its container.
  *

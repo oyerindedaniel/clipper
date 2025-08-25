@@ -660,7 +660,7 @@ FirstRun=false
     }
 
     const ffmpegPath = ffmpegStatic;
-    console.log("ffmpegPath", ffmpegPath);
+
     if (!ffmpegPath) {
       logger.error("❌ FFmpeg binary not found");
       return { success: false, error: "FFmpeg binary not found" };
@@ -744,8 +744,6 @@ FirstRun=false
           resolve(false);
         });
       });
-
-      console.log("copySuccess", copySuccess);
 
       if (!copySuccess) {
         return {

@@ -172,19 +172,24 @@ class AWSUploadService {
     }
 
     try {
-      const timestamp = new Date().toISOString().replace(/[:.]/g, "-");
-      const streamerName = await this.getStreamerName();
-      const filename = `${streamerName || "unknown"}_clip_${timestamp}.mp4`;
+      const filename = `${clipMarker.id}.mp4`;
 
       const s3Key = this.config!.folder
         ? `${this.config!.folder}/${filename}`
         : filename;
+
+      const clipDurationMs = clipMarker.endTime - clipMarker.startTime;
+      const clipDurationSec = (clipDurationMs / 1000).toFixed(2);
 
       logger.log("📁 Preparing clip for AWS upload", {
         clipId: clipMarker.id,
         filename,
         s3Key,
         bucket: this.config!.bucket,
+        duration: `${clipDurationSec}s`,
+        startTime: clipMarker.startTime,
+        endTime: clipMarker.endTime,
+        streamerName: this.currentStreamerName || "unknown",
       });
 
       const tempDir = path.join(os.homedir(), "twitch-recorder-buffer");
@@ -206,7 +211,11 @@ class AWSUploadService {
         };
       }
 
-      const uploadResult = await this.uploadFileToS3(tempClipPath, s3Key);
+      const uploadResult = await this.uploadFileToS3(
+        tempClipPath,
+        s3Key,
+        this.getClipMetadata(clipMarker)
+      );
 
       try {
         if (fs.existsSync(tempClipPath)) {
@@ -292,7 +301,8 @@ class AWSUploadService {
    */
   private async uploadFileToS3(
     filePath: string,
-    s3Key: string
+    s3Key: string,
+    additionalMetadata: Record<string, string>
   ): Promise<{ success: boolean; url?: string; error?: string }> {
     try {
       if (!fs.existsSync(filePath)) {
@@ -308,15 +318,25 @@ class AWSUploadService {
         fileSize: `${(fileSize / 1024 / 1024).toFixed(2)} MB`,
       });
 
+      const uploadTimestamp = new Date().toISOString();
+      const streamerName = this.currentStreamerName || "unknown";
+
+      const metadata = {
+        "upload-timestamp": uploadTimestamp,
+        "original-filename": path.basename(filePath),
+        "streamer-name": streamerName,
+        "reference-id": additionalMetadata["clip-id"],
+        ...additionalMetadata,
+      };
+
       const command = new PutObjectCommand({
         Bucket: this.config!.bucket,
         Key: s3Key,
         Body: fileBuffer,
         ContentType: "video/mp4",
-        Metadata: {
-          "upload-timestamp": new Date().toISOString(),
-          "original-filename": path.basename(filePath),
-        },
+        Metadata: metadata,
+        CacheControl: "max-age=86400, public",
+        // ACL: "public-read",
       });
 
       await this.s3Client!.send(command);
@@ -329,6 +349,7 @@ class AWSUploadService {
         s3Key,
         url,
         fileSize: `${(fileSize / 1024 / 1024).toFixed(2)} MB`,
+        streamerName,
       });
 
       return { success: true, url };
@@ -341,29 +362,25 @@ class AWSUploadService {
     }
   }
 
-  /**
-   * Get the current streamer name from the Twitch window
-   */
-  private async getStreamerName(): Promise<string | null> {
-    try {
-      return this.currentStreamerName || "twitch-streamer";
-    } catch (error) {
-      logger.warn("⚠️ Could not get streamer name:", error);
-      return "unknown-streamer";
-    }
-  }
-
-  /**
-   * Set the current streamer name
-   */
   setStreamerName(streamerName: string): void {
     this.currentStreamerName = streamerName;
     logger.log("📝 Streamer name set for AWS uploads:", streamerName);
   }
 
-  /**
-   * Clean up resources
-   */
+  private getClipMetadata(clipMarker: ClipMarker): Record<string, string> {
+    const clipDurationMs = clipMarker.endTime - clipMarker.startTime;
+
+    return {
+      "clip-id": clipMarker.id,
+      "clip-duration-ms": clipDurationMs.toString(),
+      "clip-start-time": clipMarker.startTime.toString(),
+      "clip-end-time": clipMarker.endTime.toString(),
+      "stream-start-time": clipMarker.streamStart
+        ? clipMarker.streamStart.toString()
+        : "unknown",
+    };
+  }
+
   cleanup(): void {
     this.s3Client = null;
     this.config = null;

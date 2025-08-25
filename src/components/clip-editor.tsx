@@ -28,8 +28,7 @@ import { useTextOverlays } from "@/hooks/use-text-overlays";
 import { DraggableTextOverlay } from "./draggable-text-overlay";
 import TextOverlayItem from "./text-overlay-item";
 import { redirect, RedirectType } from "next/navigation";
-import { getVideoBoundingBox } from "@/utils/app";
-import * as MediaPlayer from "@/components/ui/media-player";
+import { getVideoBoundingBox, getTargetVideoDimensions } from "@/utils/app";
 import AspectRatioSelector from "./aspect-ratio-selector";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -38,7 +37,6 @@ import { DEFAULT_ASPECT_RATIO, DEFAULT_CROP_MODE } from "@/constants/app";
 import Timeline from "@/components/timeline";
 import { TimelineSkeleton } from "@/components/timeline-skeleton";
 import { ExportNamingDialog } from "@/components/export-naming-dialog";
-import { getTargetVideoDimensions } from "@/utils/app";
 import MediaPlayerContainer from "@/components/media-player-container";
 import { useLatestValue } from "@/hooks/use-latest-value";
 
