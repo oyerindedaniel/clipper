@@ -5,6 +5,7 @@ import * as os from "os";
 import logger from "../../src/utils/logger";
 import { ClipMarker } from "../../src/types/app";
 import OBSRecordingService from "./obs-recording-service";
+import { normalizeError } from "../../src/utils/error-utils";
 
 export interface AWSConfig {
   region: string;
@@ -124,7 +125,7 @@ class AWSUploadService {
       } catch (error) {
         logger.error("❌ Upload failed", {
           clipId: clip.id,
-          error: error instanceof Error ? error.message : error,
+          error: normalizeError(error).message,
           attempt: retries + 1,
         });
 
@@ -223,7 +224,10 @@ class AWSUploadService {
           logger.log("🧹 Temporary clip file cleaned up", { tempClipPath });
         }
       } catch (cleanupError) {
-        logger.warn("⚠️ Failed to clean up temporary file:", cleanupError);
+        logger.warn(
+          "⚠️ Failed to clean up temporary file:",
+          normalizeError(cleanupError).message
+        );
       }
 
       if (uploadResult.success) {
@@ -240,10 +244,11 @@ class AWSUploadService {
         };
       }
     } catch (error) {
-      logger.error("💥 Error in uploadClip:", error);
+      const msg = normalizeError(error).message;
+      logger.error("💥 Error in uploadClip:", msg);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: msg,
         clipId: clipMarker.id,
       };
     }
@@ -291,7 +296,10 @@ class AWSUploadService {
         return false;
       }
     } catch (error) {
-      logger.error("❌ Failed to extract clip to file:", error);
+      logger.error(
+        "❌ Failed to extract clip to file:",
+        normalizeError(error).message
+      );
       return false;
     }
   }
@@ -354,10 +362,11 @@ class AWSUploadService {
 
       return { success: true, url };
     } catch (error) {
-      logger.error("❌ Failed to upload file to S3:", error);
+      const msg = normalizeError(error).message;
+      logger.error("❌ Failed to upload file to S3:", msg);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: msg,
       };
     }
   }

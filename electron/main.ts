@@ -82,6 +82,7 @@ let isRecording = false;
 let clipMarkers: ClipMarker[] = [];
 let currentStream: StreamSession | null = null;
 
+let preMarkDurationMs = DEFAULT_CLIP_PRE_MARK_MS;
 let postMarkDurationMs = DEFAULT_CLIP_POST_MARK_MS;
 
 const bufferDir = path.join(os.homedir(), "twitch-recorder-buffer");
@@ -201,7 +202,7 @@ async function startRecording(sourceId?: string): Promise<void> {
       startTime: currentStream.startTime,
     });
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
+    const msg = normalizeError(err).message;
     logger.error("Recording failed:", msg);
 
     mainWindow?.webContents.send("recording-error", msg);
@@ -228,7 +229,7 @@ async function stopRecording(): Promise<void> {
 
     mainWindow?.webContents.send("recording-stopped");
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
+    const msg = normalizeError(err).message;
     logger.error("Stop recording failed:", msg);
     mainWindow?.webContents.send("recording-error", msg);
     throw err;
@@ -243,7 +244,7 @@ async function markClip(): Promise<void> {
 
   try {
     const marker = await recordingService.createClipMarker(
-      DEFAULT_CLIP_PRE_MARK_MS,
+      preMarkDurationMs,
       postMarkDurationMs
     );
     if (!marker) return;
@@ -377,7 +378,7 @@ async function clipBlob(
     logger.error("❌ clipBlob function failed:", error);
     return {
       success: false,
-      error: error instanceof Error ? error.message : "Unknown error",
+      error: normalizeError(error).message,
     };
   }
 }
@@ -411,7 +412,7 @@ async function exportClip(
     logger.log("✅ Clip exported successfully", { outputPath: output });
     return { success: true, outputPath: output };
   } catch (err) {
-    const msg = err instanceof Error ? err.message : "Unknown error";
+    const msg = normalizeError(err).message;
     logger.error("Export clip failed:", msg);
     throw err;
   }
@@ -951,9 +952,9 @@ async function processClipForExport(
     });
   } catch (error) {
     logger.error("💥 Export failed with exception", {
-      error: error instanceof Error ? error.message : error,
+      error: normalizeError(error).message,
       clipId: data.id,
-      stack: error instanceof Error ? error.stack : undefined,
+      stack: normalizeError(error).stack,
     });
     throw error;
   }
@@ -1779,7 +1780,7 @@ function setupIpc(): void {
       } catch (err) {
         return {
           success: false,
-          error: err instanceof Error ? err.message : "Unknown error",
+          error: normalizeError(err).message,
         };
       }
     }
@@ -1799,7 +1800,7 @@ function setupIpc(): void {
       } catch (error) {
         return {
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: normalizeError(error).message,
         };
       }
     }
@@ -1812,16 +1813,24 @@ function setupIpc(): void {
 
   ipcMain.handle(
     "set-clip-duration",
-    async (_: IpcMainInvokeEvent, durationMs: number) => {
+    async (
+      _: IpcMainInvokeEvent,
+      preDurationMs: number,
+      postDurationMs: number
+    ) => {
       try {
-        if (durationMs <= 0) {
+        if (preDurationMs <= 0 || postDurationMs <= 0) {
           throw new Error("Duration must be positive");
         }
-        postMarkDurationMs = durationMs;
-        logger.log("Set post-mark clip duration:", { durationMs });
+        preMarkDurationMs = preDurationMs;
+        postMarkDurationMs = postDurationMs;
+        logger.log("Set post-mark clip duration:", {
+          preDurationMs,
+          postDurationMs,
+        });
         return { success: true };
-      } catch (err) {
-        const msg = err instanceof Error ? err.message : "Unknown error";
+      } catch (error) {
+        const msg = normalizeError(error).message;
         logger.error("Failed to set clip duration:", msg);
         return { success: false, error: msg };
       }
@@ -1832,10 +1841,10 @@ function setupIpc(): void {
     try {
       await stopRecording();
       return { success: true };
-    } catch (err) {
+    } catch (error) {
       return {
         success: false,
-        error: err instanceof Error ? err.message : "Unknown error",
+        error: normalizeError(error).message,
       };
     }
   });
@@ -1847,10 +1856,10 @@ function setupIpc(): void {
     async (_: IpcMainInvokeEvent, clip: ExportClip, data: ClipExportData) => {
       try {
         return await processClipForExportWithCanvas(clip, data);
-      } catch (err) {
+      } catch (error) {
         return {
           success: false,
-          error: err instanceof Error ? err.message : "Unknown error",
+          error: normalizeError(error).message,
         };
       }
     }
@@ -1974,7 +1983,7 @@ function setupIpc(): void {
         logger.error("Failed to queue clip for AWS upload:", error);
         return {
           success: false,
-          error: error instanceof Error ? error.message : "Unknown error",
+          error: normalizeError(error).message,
         };
       }
     }

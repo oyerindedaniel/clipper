@@ -17,7 +17,8 @@ export interface ElectronAPI {
   ) => Promise<{ success: boolean }>;
   stopRecording: () => Promise<{ success: boolean }>;
   setClipDuration: (
-    durationMs: number
+    preDurationMs: number,
+    postDurationMs: number
   ) => Promise<{ success: boolean; error?: string }>;
   getClipMarkers: () => Promise<ClipMarker[]>;
   getClipBlob: (

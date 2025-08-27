@@ -12,6 +12,7 @@ import {
   DEFAULT_CLIP_PRE_MARK_MS,
   WAIT_UNTIL_BUFFER_TIMEOUT_MS,
 } from "../../src/constants/app";
+import { normalizeError } from "../../src/utils/error-utils";
 
 interface RecordingSession {
   process: ChildProcess;
@@ -616,7 +617,7 @@ FirstRun=false
       logger.error("❌ Failed to start OBS recording:", error);
       return {
         status: "error",
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: normalizeError(error).message,
       };
     }
   }
@@ -847,7 +848,7 @@ FirstRun=false
       logger.error("❌ Clip extraction failed:", error);
       return {
         success: false,
-        error: error instanceof Error ? error.message : "Unknown error",
+        error: normalizeError(error).message,
       };
     } finally {
     }

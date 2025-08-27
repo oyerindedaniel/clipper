@@ -11,7 +11,10 @@ import { toast } from "sonner";
 import logger from "@/utils/logger";
 import { Button } from "@/components/ui/button";
 import { Tv, Eraser, Timer } from "lucide-react";
-import { DEFAULT_CLIP_POST_MARK_MS } from "@/constants/app";
+import {
+  DEFAULT_CLIP_POST_MARK_MS,
+  DEFAULT_CLIP_PRE_MARK_MS,
+} from "@/constants/app";
 import {
   Tooltip,
   TooltipContent,
@@ -39,9 +42,6 @@ export default function Home() {
     open: openClipDurationDialog,
     close: closeClipDurationDialog,
   } = useDisclosure();
-  const [clipPostMarkDuration, setClipPostMarkDuration] = useState<number>(
-    DEFAULT_CLIP_POST_MARK_MS
-  );
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.electronAPI) {
@@ -145,10 +145,16 @@ export default function Home() {
     [setActiveTab]
   );
 
-  const handleSaveClipDuration = async (duration: number) => {
-    await window.electronAPI.setClipDuration(duration);
-
-    toast.success(`Clip post-mark duration set to ${duration / 1000} seconds.`);
+  const handleSaveClipDuration = async (
+    preDurationMs: number,
+    postDurationMs: number
+  ) => {
+    await window.electronAPI.setClipDuration(preDurationMs, postDurationMs);
+    toast.success(
+      `Clip duration set to ${preDurationMs / 1000} seconds -> ${
+        postDurationMs / 1000
+      } seconds.`
+    );
   };
 
   return (
@@ -311,7 +317,8 @@ export default function Home() {
         isOpen={isOpenClipDurationDialog}
         onOpenChange={closeClipDurationDialog}
         onSave={handleSaveClipDuration}
-        currentDurationMs={clipPostMarkDuration}
+        currentPreDurationMs={DEFAULT_CLIP_PRE_MARK_MS}
+        currentPostDurationMs={DEFAULT_CLIP_POST_MARK_MS}
       />
     </div>
   );

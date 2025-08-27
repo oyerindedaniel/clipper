@@ -50,8 +50,8 @@ contextBridge.exposeInMainWorld("electronAPI", {
 
   getBufferDuration: (): Promise<number> =>
     ipcRenderer.invoke("get-buffer-duration"),
-  setClipDuration: (durationMs: number) =>
-    ipcRenderer.invoke("set-clip-duration", durationMs),
+  setClipDuration: (preDurationMs: number, postDurationMs: number) =>
+    ipcRenderer.invoke("set-clip-duration", preDurationMs, postDurationMs),
 
   // Listeners for main process events
   onRecordingStarted: (

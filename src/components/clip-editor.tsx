@@ -53,7 +53,6 @@ const ClipEditor = ({ clip }: ClipEditorProps) => {
 
   const [isExporting, setIsExporting] = useState(false);
   const [activeTab, setActiveTab] = useState<ClipToolType>("clips");
-  const [zoomLevel, setZoomLevel] = useState(1);
 
   const [isVideoLoaded, setIsVideoLoaded] = useState(false);
   const {
