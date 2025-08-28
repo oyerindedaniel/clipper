@@ -286,7 +286,6 @@ async function clipBlob(
   try {
     const tempOutputPath = path.join(bufferDir, `temp_clip_${Date.now()}.mkv`);
 
-    // Use the recording service to extract the clip
     const result = await recordingService.extractClip(
       startTimeMs,
       endTimeMs,
@@ -1621,7 +1620,7 @@ function getVideoDimensions(
 const conversionQueue = new pQueue({ concurrency: 1 });
 
 /**
- * Convert video to different aspect ratio using FFmpeg
+ * Convert video to different aspect ratio
  */
 async function convertVideoAspectRatio(
   inputBuffer: ArrayBuffer,
