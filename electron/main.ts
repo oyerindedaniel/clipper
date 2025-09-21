@@ -1317,7 +1317,7 @@ async function generateOverlayFrames(
     const currentTimeMs = (frameIndex / fps) * 1000;
 
     // Clear canvas with transparent background
-    ctx.clearRect(0, 0, videoDimensions.width, videoDimensions.height);
+    ctx.clearRect(0, 0, renderWidth, renderHeight);
 
     // Determines visible overlays at this time
     const visibleOverlays = overlays.filter(
