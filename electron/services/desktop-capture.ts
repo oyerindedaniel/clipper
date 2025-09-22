@@ -25,7 +25,8 @@ class DesktopCaptureManager {
     try {
       // Try to get sources with different fetch windows options
       const sources = await desktopCapturer.getSources({
-        types: ["window", "screen"],
+        // types: ["window", "screen"],
+        types: ["window"],
         fetchWindowIcons: false,
         thumbnailSize: { width: 150, height: 150 },
         // @ts-ignore

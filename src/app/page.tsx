@@ -3,22 +3,15 @@
 import { useState, useEffect, startTransition, useCallback } from "react";
 import StreamViewer from "@/components/stream-viewer";
 import RecordingControls from "@/components/recording-controls";
-import ClipEditor from "@/components/clip-editor";
-import ClipList from "@/components/clip-list";
 import { ClipMarker, RecordingStartedInfo } from "@/types/app";
-import { IpcRendererEvent } from "electron";
 import { normalizeError } from "@/utils/error-utils";
 import { toast } from "sonner";
-import recordingService from "@/services/recording-service";
 import logger from "@/utils/logger";
-import { waitUntilBufferCatchesUp } from "@/utils/app";
 import { Button } from "@/components/ui/button";
 import { Tv, Eraser, Timer } from "lucide-react";
 import {
-  DEFAULT_CLIP_PRE_MARK_MS,
   DEFAULT_CLIP_POST_MARK_MS,
-  CLIP_BUFFER_MS,
-  WAIT_UNTIL_BUFFER_TIMEOUT_MS,
+  DEFAULT_CLIP_PRE_MARK_MS,
 } from "@/constants/app";
 import {
   Tooltip,
@@ -27,7 +20,6 @@ import {
   TooltipTrigger,
 } from "@/components/ui/tooltip";
 import { ClipDurationDialog } from "@/components/clip-duration-dialog";
-import { useLatestValue } from "@/hooks/use-latest-value";
 import { useDisclosure } from "@/hooks/use-disclosure";
 
 type TabKey = "stream" | "clips" | "editor";
@@ -48,120 +40,9 @@ export default function Home() {
     open: openClipDurationDialog,
     close: closeClipDurationDialog,
   } = useDisclosure();
-  const [clipPostMarkDuration, setClipPostMarkDuration] = useState<number>(
-    DEFAULT_CLIP_POST_MARK_MS
-  );
-
-  const clipPostMarkDurationRef = useLatestValue(clipPostMarkDuration);
 
   useEffect(() => {
     if (typeof window !== "undefined" && window.electronAPI) {
-      window.electronAPI.onRequestStartRecording(
-        async (event: IpcRendererEvent, { sourceId, requestId }) => {
-          try {
-            logger.log("Received start recording request:", {
-              sourceId,
-              requestId,
-            });
-            const result = await recordingService.startRecording(sourceId);
-            window.electronAPI.sendStartRecordingResponse({
-              requestId,
-              success: result.success,
-            });
-          } catch (error) {
-            logger.error("Failed to start recording:", error);
-            window.electronAPI.sendStartRecordingResponse({
-              requestId,
-              success: false,
-              error: error instanceof Error ? error.message : "Unknown error",
-            });
-          }
-        }
-      );
-
-      window.electronAPI.onRequestStopRecording(
-        async (event: IpcRendererEvent, { requestId }) => {
-          try {
-            logger.log("Received stop recording request:", { requestId });
-            await recordingService.stopRecording();
-            window.electronAPI.sendStopRecordingResponse({
-              requestId,
-              success: true,
-            });
-          } catch (error) {
-            logger.error("Failed to stop recording:", error);
-            window.electronAPI.sendStopRecordingResponse({
-              requestId,
-              success: false,
-            });
-          }
-        }
-      );
-
-      window.electronAPI.onRequestMarkClip(
-        async (event: IpcRendererEvent, { requestId, streamStartTime }) => {
-          try {
-            logger.log("Received mark clip request:", {
-              requestId,
-              streamStartTime,
-            });
-
-            if (!recordingService.isCurrentlyRecording()) {
-              window.electronAPI.sendMarkClipResponse({
-                requestId,
-                success: false,
-              });
-              return;
-            }
-
-            const now = Date.now();
-            const recordingStartTime = recordingService.getRecordingStartTime();
-
-            if (!recordingStartTime) {
-              window.electronAPI.sendMarkClipResponse({
-                requestId,
-                success: false,
-              });
-              return;
-            }
-
-            const relative = now - recordingStartTime;
-            const desiredEnd = relative + clipPostMarkDurationRef.current;
-            const target = desiredEnd + CLIP_BUFFER_MS;
-
-            await waitUntilBufferCatchesUp(
-              target,
-              target + WAIT_UNTIL_BUFFER_TIMEOUT_MS
-            );
-
-            const clipStart = Math.max(0, relative - DEFAULT_CLIP_PRE_MARK_MS);
-            const clipEnd = Math.min(
-              desiredEnd,
-              recordingService.getBufferDuration()
-            );
-
-            const marker = {
-              id: `clip_${now}`,
-              startTime: clipStart,
-              endTime: clipEnd,
-              markedAt: now,
-            };
-
-            window.electronAPI.sendMarkClipResponse({
-              requestId,
-              success: true,
-              marker,
-            });
-          } catch (error) {
-            logger.error("Failed to mark clip:", error);
-            window.electronAPI.sendMarkClipResponse({
-              requestId,
-              success: false,
-            });
-          }
-        }
-      );
-
       window.electronAPI.onRecordingStarted(
         (event, data: RecordingStartedInfo) => {
           setIsRecording(true);
@@ -183,6 +64,7 @@ export default function Home() {
       window.electronAPI.onRecordingError((event, error: string) => {
         logger.error("Recording error:", error);
         setIsRecording(false);
+        toast.error(error);
       });
 
       loadClipMarkers();
@@ -190,10 +72,6 @@ export default function Home() {
 
     return () => {
       if (typeof window !== "undefined" && window.electronAPI) {
-        window.electronAPI.removeAllListeners("request-start-recording");
-        window.electronAPI.removeAllListeners("request-stop-recording");
-        window.electronAPI.removeAllListeners("request-mark-clip");
-        window.electronAPI.removeAllListeners("request-export-clip");
         window.electronAPI.removeAllListeners("recording-started");
         window.electronAPI.removeAllListeners("recording-stopped");
         window.electronAPI.removeAllListeners("clip-marked");
@@ -247,14 +125,8 @@ export default function Home() {
   };
 
   const handleClearMemory = () => {
-    recordingService.reset();
     setClipMarkers([]);
     toast.success("Memory cleared successfully!");
-  };
-
-  const handleEditClip = (clip: ClipMarker) => {
-    setSelectedClip(clip);
-    startTransition(() => setActiveTab("editor"));
   };
 
   const handleTabClick = useCallback(
@@ -266,9 +138,16 @@ export default function Home() {
     [setActiveTab]
   );
 
-  const handleSaveClipDuration = (duration: number) => {
-    setClipPostMarkDuration(duration);
-    toast.success(`Clip post-mark duration set to ${duration / 1000} seconds.`);
+  const handleSaveClipDuration = async (
+    preDurationMs: number,
+    postDurationMs: number
+  ) => {
+    await window.electronAPI.setClipDuration(preDurationMs, postDurationMs);
+    toast.success(
+      `Clip duration set to ${preDurationMs / 1000} seconds -> ${
+        postDurationMs / 1000
+      } seconds.`
+    );
   };
 
   return (
@@ -302,7 +181,7 @@ export default function Home() {
                     </Button>
                   </TooltipTrigger>
                   <TooltipContent>
-                    <p>Clear Memory (Resets recording and clips)</p>
+                    <p>Clear Memory (Resets clips)</p>
                   </TooltipContent>
                 </Tooltip>
               </TooltipProvider>
@@ -344,32 +223,6 @@ export default function Home() {
             >
               Stream Viewer
             </Button>
-            <Button
-              onClick={() => handleTabClick("clips")}
-              className={`rounded-none py-3 px-1 border-b-2 font-medium text-xs cursor-pointer
-                ${
-                  activeTab === "clips"
-                    ? "border-primary text-primary"
-                    : "border-transparent text-foreground-subtle hover:text-foreground-default hover:bg-surface-hover"
-                }
-              `}
-              variant="ghost"
-            >
-              Clips ({clipMarkers.length})
-            </Button>
-            <Button
-              onClick={() => handleTabClick("editor")}
-              className={`rounded-none py-3 px-1 border-b-2 font-medium text-xs cursor-pointer
-                ${
-                  activeTab === "editor"
-                    ? "border-primary text-primary"
-                    : "border-transparent text-foreground-subtle hover:text-foreground-default hover:bg-surface-hover"
-                }
-              `}
-              variant="ghost"
-            >
-              Editor
-            </Button>
           </div>
         </div>
       </nav>
@@ -381,16 +234,6 @@ export default function Home() {
             recordingStartTime={recordingStartTime}
           />
         )}
-
-        {activeTab === "clips" && (
-          <ClipList
-            clips={clipMarkers}
-            onEditClip={handleEditClip}
-            onRefresh={loadClipMarkers}
-          />
-        )}
-
-        {activeTab === "editor" && <ClipEditor clip={selectedClip} />}
       </main>
 
       <div className="fixed z-20 bottom-0 left-0 right-0 bg-surface-secondary border-t border-gray-700/50 px-4 py-2">
@@ -431,7 +274,8 @@ export default function Home() {
         isOpen={isOpenClipDurationDialog}
         onOpenChange={closeClipDurationDialog}
         onSave={handleSaveClipDuration}
-        currentDurationMs={clipPostMarkDuration}
+        currentPreDurationMs={DEFAULT_CLIP_PRE_MARK_MS}
+        currentPostDurationMs={DEFAULT_CLIP_POST_MARK_MS}
       />
     </div>
   );

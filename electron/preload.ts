@@ -2,17 +2,14 @@ import { contextBridge, ipcRenderer, IpcRendererEvent } from "electron";
 import {
   ClipExportData,
   ClipMarker,
+  ClipOptions,
+  ClipResponse,
   DesktopSource,
+  ExportClip,
   ExportProgressInfo,
-  MarkClipResponse,
   RecordingStartedInfo,
-  StartRecordingResponse,
-  StopRecordingResponse,
 } from "../src/types/app";
 
-/**
- * Exposed APIs for the renderer process.
- */
 contextBridge.exposeInMainWorld("electronAPI", {
   openTwitchStream: (channelName: string): Promise<{ success: boolean }> =>
     ipcRenderer.invoke("open-twitch-stream", channelName),
@@ -33,74 +30,30 @@ contextBridge.exposeInMainWorld("electronAPI", {
     ipcRenderer.invoke("remux-clip", chunks, clipStartMs, clipEndMs, options),
   getClipMarkers: (): Promise<ClipMarker[]> =>
     ipcRenderer.invoke("get-clip-markers"),
-
   exportClip: (
-    clipData: ClipExportData
+    clip: ExportClip,
+    data: ClipExportData
   ): Promise<{ success: boolean; outputPath: string }> =>
-    ipcRenderer.invoke("export-clip", clipData),
-
+    ipcRenderer.invoke("export-clip", clip, data),
   selectOutputFolder: (): Promise<string | null> =>
     ipcRenderer.invoke("select-output-folder"),
   getDesktopSources: (): Promise<DesktopSource[]> =>
     ipcRenderer.invoke("get-desktop-sources"),
   getStreamerName: (): Promise<string | null> =>
     ipcRenderer.invoke("get-streamer-name"),
+  getClipBlob: (
+    startTimeMs: number,
+    endTimeMs: number,
+    options: ClipOptions = {}
+  ): Promise<ClipResponse> =>
+    ipcRenderer.invoke("get-clip-blob", startTimeMs, endTimeMs, options),
 
-  // Recording service communication
-  onRequestStartRecording: (
-    callback: (
-      _: IpcRendererEvent,
-      data: { sourceId: string; requestId: string }
-    ) => void
-  ): void => {
-    ipcRenderer.on("request-start-recording", callback);
-  },
+  getBufferDuration: (): Promise<number> =>
+    ipcRenderer.invoke("get-buffer-duration"),
+  setClipDuration: (preDurationMs: number, postDurationMs: number) =>
+    ipcRenderer.invoke("set-clip-duration", preDurationMs, postDurationMs),
 
-  onRequestStopRecording: (
-    callback: (_: IpcRendererEvent, data: { requestId: string }) => void
-  ): void => {
-    ipcRenderer.on("request-stop-recording", callback);
-  },
-
-  onRequestMarkClip: (
-    callback: (
-      _: IpcRendererEvent,
-      data: { requestId: string; streamStartTime: number }
-    ) => void
-  ): void => {
-    ipcRenderer.on("request-mark-clip", callback);
-  },
-
-  onRequestExportClip: (
-    callback: (
-      _: IpcRendererEvent,
-      data: {
-        requestId: string;
-        clipData: ClipExportData;
-      }
-    ) => void
-  ): void => {
-    ipcRenderer.on("request-export-clip", callback);
-  },
-
-  // Response senders
-  sendStartRecordingResponse: (response: StartRecordingResponse): void => {
-    ipcRenderer.send("start-recording-response", response);
-  },
-
-  sendStopRecordingResponse: (response: StopRecordingResponse): void => {
-    ipcRenderer.send("stop-recording-response", response);
-  },
-
-  sendMarkClipResponse: (response: MarkClipResponse): void => {
-    ipcRenderer.send("mark-clip-response", response);
-  },
-
-  sendExportClipResponse: (response: ExportProgressInfo): void => {
-    ipcRenderer.send("export-clip-response", response);
-  },
-
-  // Existing listeners
+  // Listeners for main process events
   onRecordingStarted: (
     callback: (_: IpcRendererEvent, info: RecordingStartedInfo) => void
   ): void => {
@@ -128,11 +81,14 @@ contextBridge.exposeInMainWorld("electronAPI", {
   removeAllListeners: (channel: string): void => {
     ipcRenderer.removeAllListeners(channel);
   },
+
+  uploadClipToAWS: (
+    clipMarker: ClipMarker
+  ): Promise<{ success: boolean; error?: string }> =>
+    ipcRenderer.invoke("upload-clip-to-aws", clipMarker),
 });
 
 contextBridge.exposeInMainWorld("screenCapture", {
-  getUserMedia: (constraints: MediaStreamConstraints): Promise<MediaStream> =>
-    navigator.mediaDevices.getUserMedia(constraints),
   getSources: (): Promise<DesktopSource[]> =>
     ipcRenderer.invoke("get-desktop-sources"),
 });

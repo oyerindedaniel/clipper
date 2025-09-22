@@ -2,13 +2,11 @@ import { IpcRendererEvent } from "electron";
 import {
   ClipExportData,
   ClipMarker,
+  ClipOptions,
+  ClipResponse,
   DesktopSource,
   ExportProgressInfo,
   RecordingStartedInfo,
-  StartRecordingResponse,
-  StopRecordingResponse,
-  MarkClipResponse,
-  ExportClipResponse,
 } from "@/types/app";
 
 export interface ElectronAPI {
@@ -18,7 +16,17 @@ export interface ElectronAPI {
     resetBuffer?: boolean
   ) => Promise<{ success: boolean }>;
   stopRecording: () => Promise<{ success: boolean }>;
+  setClipDuration: (
+    preDurationMs: number,
+    postDurationMs: number
+  ) => Promise<{ success: boolean; error?: string }>;
   getClipMarkers: () => Promise<ClipMarker[]>;
+  getClipBlob: (
+    startTimeMs: number,
+    endTimeMs: number,
+    options?: ClipOptions
+  ) => Promise<ClipResponse>;
+  getBufferDuration: () => Promise<number>;
   remuxClip: (
     chunks: ArrayBuffer[],
     clipStartMs: number,
@@ -29,36 +37,12 @@ export interface ElectronAPI {
     }
   ) => Promise<ArrayBuffer>;
   exportClip: (
-    clipData: ClipExportData
+    clip: ExportClip,
+    data: ClipExportData
   ) => Promise<{ success: boolean; outputPath: string }>;
   selectOutputFolder: () => Promise<string | null>;
   getDesktopSources: () => Promise<DesktopSource[]>;
   getStreamerName: () => Promise<string | null>;
-  onRequestStartRecording: (
-    callback: (
-      _: IpcRendererEvent,
-      data: { sourceId: string; requestId: string }
-    ) => void
-  ) => void;
-  onRequestStopRecording: (
-    callback: (_: IpcRendererEvent, data: { requestId: string }) => void
-  ) => void;
-  onRequestMarkClip: (
-    callback: (
-      _: IpcRendererEvent,
-      data: { requestId: string; streamStartTime: number }
-    ) => void
-  ) => void;
-  onRequestExportClip: (
-    callback: (
-      _: IpcRendererEvent,
-      data: { requestId: string; clipData: ClipExportData }
-    ) => void
-  ) => void;
-  sendStartRecordingResponse: (response: StartRecordingResponse) => void;
-  sendStopRecordingResponse: (response: StopRecordingResponse) => void;
-  sendMarkClipResponse: (response: MarkClipResponse) => void;
-  sendExportClipResponse: (response: ExportClipResponse) => void;
   onRecordingStarted: (
     callback: (_: IpcRendererEvent, info: RecordingStartedInfo) => void
   ) => void;
@@ -73,16 +57,14 @@ export interface ElectronAPI {
     callback: (_: IpcRendererEvent, progressInfo: ExportProgressInfo) => void
   ) => void;
   removeAllListeners: (channel: string) => void;
+
+  uploadClipToAWS: (
+    clipMarker: ClipMarker
+  ) => Promise<{ success: boolean; error?: string }>;
 }
 
 declare global {
   interface Window {
     electronAPI: ElectronAPI;
-    screenCapture: {
-      getUserMedia: (
-        constraints: MediaStreamConstraints
-      ) => Promise<MediaStream>;
-      getSources: () => Promise<DesktopSource[]>;
-    };
   }
 }

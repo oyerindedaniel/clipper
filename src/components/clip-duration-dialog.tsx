@@ -13,34 +13,46 @@ import { Input } from "@/components/ui/input";
 interface ClipDurationDialogProps {
   isOpen: boolean;
   onOpenChange: (open: boolean) => void;
-  onSave: (duration: number) => void;
-  currentDurationMs: number;
+  onSave: (preDurationMs: number, postDurationMs: number) => void;
+  currentPreDurationMs: number;
+  currentPostDurationMs: number;
 }
 
 export const ClipDurationDialog: React.FC<ClipDurationDialogProps> = ({
   isOpen,
   onOpenChange,
   onSave,
-  currentDurationMs,
+  currentPreDurationMs,
+  currentPostDurationMs,
 }) => {
-  const durationInputRef = useRef<HTMLInputElement>(null);
+  const preDurationRef = useRef<HTMLInputElement>(null);
+  const postDurationRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
     setTimeout(() => {
-      if (isOpen && durationInputRef.current) {
-        durationInputRef.current.value = String(currentDurationMs / 1000);
+      if (isOpen) {
+        if (preDurationRef.current) {
+          preDurationRef.current.value = String(currentPreDurationMs / 1000);
+        }
+        if (postDurationRef.current) {
+          postDurationRef.current.value = String(currentPostDurationMs / 1000);
+        }
       }
     }, 0);
-  }, [isOpen, currentDurationMs]);
+  }, [isOpen, currentPostDurationMs]);
 
   const handleSave = () => {
-    if (durationInputRef.current) {
-      const durationSeconds = parseFloat(durationInputRef.current.value);
-      if (!isNaN(durationSeconds) && durationSeconds > 0) {
-        onSave(durationSeconds * 1000);
-        onOpenChange(false);
-      }
+    const pre = parseFloat(preDurationRef.current?.value || "");
+    const post = parseFloat(postDurationRef.current?.value || "");
+
+    if (!isNaN(pre) && pre > 0 && !isNaN(post) && post > 0) {
+      onSave(pre * 1000, post * 1000);
+      onOpenChange(false);
     }
+  };
+
+  const handleKeyDown = (e: React.KeyboardEvent) => {
+    if (e.key === "Enter") handleSave();
   };
 
   return (
@@ -49,26 +61,36 @@ export const ClipDurationDialog: React.FC<ClipDurationDialogProps> = ({
         <DialogHeader>
           <DialogTitle>Set Clip Duration</DialogTitle>
           <DialogDescription>
-            Adjust the default duration of clips (post-mark) in seconds.
+            Adjust the default duration of clips (pre-mark | post-mark) in
+            seconds.
           </DialogDescription>
         </DialogHeader>
         <div className="grid gap-4 py-4">
           <div className="grid grid-cols-4 items-center gap-4">
             <label htmlFor="duration" className="text-right text-xs">
-              Duration (seconds)
+              Pre Duration (seconds)
             </label>
             <Input
-              id="duration"
+              id="preDuration"
               type="number"
-              ref={durationInputRef}
+              min={1}
+              ref={preDurationRef}
               className="col-span-3"
-              min="1"
               autoFocus
-              onKeyDown={(e) => {
-                if (e.key === "Enter") {
-                  handleSave();
-                }
-              }}
+              onKeyDown={handleKeyDown}
+            />
+          </div>
+          <div className="grid grid-cols-4 items-center gap-4">
+            <label htmlFor="duration" className="text-right text-xs">
+              Post Duration (seconds)
+            </label>
+            <Input
+              id="postDuration"
+              type="number"
+              min={1}
+              ref={postDurationRef}
+              className="col-span-3"
+              onKeyDown={handleKeyDown}
             />
           </div>
         </div>
