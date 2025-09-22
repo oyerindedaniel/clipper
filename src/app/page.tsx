@@ -3,8 +3,6 @@
 import { useState, useEffect, startTransition, useCallback } from "react";
 import StreamViewer from "@/components/stream-viewer";
 import RecordingControls from "@/components/recording-controls";
-import ClipEditor from "@/components/clip-editor";
-import ClipList from "@/components/clip-list";
 import { ClipMarker, RecordingStartedInfo } from "@/types/app";
 import { normalizeError } from "@/utils/error-utils";
 import { toast } from "sonner";
@@ -131,11 +129,6 @@ export default function Home() {
     toast.success("Memory cleared successfully!");
   };
 
-  const handleEditClip = (clip: ClipMarker) => {
-    setSelectedClip(clip);
-    startTransition(() => setActiveTab("editor"));
-  };
-
   const handleTabClick = useCallback(
     (key: TabKey) => {
       startTransition(() => {
@@ -230,32 +223,6 @@ export default function Home() {
             >
               Stream Viewer
             </Button>
-            <Button
-              onClick={() => handleTabClick("clips")}
-              className={`rounded-none py-3 px-1 border-b-2 font-medium text-xs cursor-pointer
-                ${
-                  activeTab === "clips"
-                    ? "border-primary text-primary"
-                    : "border-transparent text-foreground-subtle hover:text-foreground-default hover:bg-surface-hover"
-                }
-              `}
-              variant="ghost"
-            >
-              Clips ({clipMarkers.length})
-            </Button>
-            <Button
-              onClick={() => handleTabClick("editor")}
-              className={`rounded-none py-3 px-1 border-b-2 font-medium text-xs cursor-pointer
-                ${
-                  activeTab === "editor"
-                    ? "border-primary text-primary"
-                    : "border-transparent text-foreground-subtle hover:text-foreground-default hover:bg-surface-hover"
-                }
-              `}
-              variant="ghost"
-            >
-              Editor
-            </Button>
           </div>
         </div>
       </nav>
@@ -267,16 +234,6 @@ export default function Home() {
             recordingStartTime={recordingStartTime}
           />
         )}
-
-        {activeTab === "clips" && (
-          <ClipList
-            clips={clipMarkers}
-            onEditClip={handleEditClip}
-            onRefresh={loadClipMarkers}
-          />
-        )}
-
-        {activeTab === "editor" && <ClipEditor clip={selectedClip} />}
       </main>
 
       <div className="fixed z-20 bottom-0 left-0 right-0 bg-surface-secondary border-t border-gray-700/50 px-4 py-2">

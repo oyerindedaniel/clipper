@@ -103,6 +103,16 @@ if (!fs.existsSync(bufferDir)) {
   fs.mkdirSync(bufferDir, { recursive: true });
 }
 
+function updateStreamerNameFromUrl(url: string): string | null {
+  const match = url.match(/^https:\/\/www\.twitch\.tv\/([^/?]+)/);
+  if (match) {
+    const name = match[1];
+    awsUploadService.setStreamerName(name);
+    return name;
+  }
+  return null;
+}
+
 /**
  * Create the main application window.
  */
@@ -162,6 +172,14 @@ function createTwitchWindow(channelName: string): void {
   });
 
   awsUploadService.setStreamerName(channelName);
+
+  twitchWindow.webContents.on("did-navigate", (_event, url) => {
+    updateStreamerNameFromUrl(url);
+  });
+
+  twitchWindow.webContents.on("did-navigate-in-page", (_event, url) => {
+    updateStreamerNameFromUrl(url);
+  });
 
   twitchWindow.on("closed", () => {
     twitchWindow = null;
@@ -1942,14 +1960,7 @@ function setupIpc(): void {
 
   ipcMain.handle("get-streamer-name", () => {
     if (twitchWindow) {
-      const url = twitchWindow.webContents.getURL();
-      const match = url.match(/twitch\.tv\/([^/\?]+)/);
-      if (match && match[1]) {
-        const streamerName = match[1];
-
-        awsUploadService.setStreamerName(streamerName);
-        return streamerName;
-      }
+      return updateStreamerNameFromUrl(twitchWindow.webContents.getURL());
     }
     return null;
   });
